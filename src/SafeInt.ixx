@@ -9,8 +9,9 @@ namespace chess {
 	class SafeUnsigned {
 	private:
 		static constexpr T MAX_VALUE = std::numeric_limits<T>::max();
-		T m_value = 0;
+		T m_value;
 	public:
+		constexpr SafeUnsigned() : m_value{ 0 } {}
 		explicit constexpr SafeUnsigned(T t) : m_value{ t } {}
 
 		constexpr T get() const {
@@ -86,14 +87,14 @@ namespace chess {
 			return SafeUnsigned{ static_cast<T>(~m_value) };
 		}
 
-		void subToMax(SafeUnsigned subbed, SafeUnsigned max) {
-			zAssert(max <= *this);
+		void subToMin(SafeUnsigned subbed, SafeUnsigned min) {
+			zAssert(min <= *this);
 
 			if (m_value < subbed.m_value) {
-				m_value = std::max(max.m_value, static_cast<std::uint8_t>(0));
+				m_value = min.get();
 			} else {
 				auto diff = *this - subbed;
-				*this = diff < max ? max : diff;
+				*this = diff < min ? min : diff;
 			}
 		}
 

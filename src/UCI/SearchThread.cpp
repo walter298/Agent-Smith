@@ -49,6 +49,9 @@ namespace chess {
 
 		while (!stopToken.stop_requested()) {
 			think(stopToken);
+			if (stopToken.stop_requested()) {
+				break;
+			}
 
 			GameState stateCopy;
 			{
@@ -59,11 +62,15 @@ namespace chess {
 
 			if (auto bestMove = m_searcher.findBestMove(stateCopy.pos, stateCopy.depth, stateCopy.repetitionMap)) {
 				if (!stopToken.stop_requested()) {
-					std::println("{}", bestMove->getUCIString());
+					std::println("{}", bestMove->getUCIString()); //prepends "bestmove"
 					std::fflush(stdout);
-					m_state.pos.move(*bestMove);
+
+					//don't wait for the GUI to send the next position - start thinking immediately on the next move
 					std::scoped_lock l{ m_mutex };
-					m_shouldPonder = true;
+					if (!m_calculationRequested) { //don't start thinking on opponent's time if it is our time to calculate
+						m_state.pos.move(*bestMove);
+						m_shouldPonder = true;
+					}
 				}
 			} else { //GUI sent us a position with zero legal moves
 				std::scoped_lock l{ m_mutex };
@@ -87,6 +94,7 @@ namespace chess {
 			m_shouldPonder = true;
 			m_state = std::move(state);
 		}
+		m_searcher.cancel(); //in-case we are searching
 		m_cv.notify_one();
 	}
 

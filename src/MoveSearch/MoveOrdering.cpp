@@ -40,16 +40,10 @@ namespace chess {
 			if (!attackedAllies) {
 				continue;
 			}
-			co_yield{ piece, nextSquare(attackedAllies) };
-		}
-	}
-
-	template<typename LikelyBadMoves>
-	void applyLateMoveReduction(SafeUnsigned<std::uint8_t> maxDepth, SafeUnsigned<std::uint8_t> level, LikelyBadMoves& badMoves) {
-		SafeUnsigned depthReduced{ static_cast<std::uint8_t>(std::log2(static_cast<double>(level.get()))) };
-		maxDepth.subToMax(depthReduced, 0_su8);
-		for (auto& move : badMoves) {
-			move.recommendedDepth = maxDepth;
+			auto currSquare = Square::None;
+			while (nextSquare(attackedAllies, currSquare)) {
+				co_yield{ piece, currSquare };
+			}
 		}
 	}
 
@@ -70,7 +64,7 @@ namespace chess {
 		
 		auto empty = ~(turnData.enemies.calcAllLocations() | turnData.allies.calcAllLocations());
 		for (auto attackedPiece : getTargets(turnData.allies, allEnemySquares)) {
-			auto [pp, end] = orderCapturesAndEvasionsFirst(attackedPiece, turnData, empty, movePriorities);
+			auto [pp, end] = orderCapturesAndEvasionsFirst(attackedPiece, turnData, empty, ret);
 			ret = std::ranges::subrange{ pp, end };
 		}
 
@@ -85,20 +79,21 @@ namespace chess {
 			});
 			if (pvMoveIt != priorities.end()) {
 				std::iter_swap(priorities.begin(), pvMoveIt);
-				return std::ranges::subrange{ std::next(pvMoveIt), priorities.end() };
+				return std::ranges::subrange{ std::next(priorities.begin()), priorities.end() };
 			}
 		}
 		return std::ranges::subrange{ priorities.begin(), priorities.end() };
 	}
 
 	arena::Vector<MovePriority> getMovePrioritiesImpl(const Node& node, const Move& pvMove, std::span<const Move> killerMoves) {
-		zAssert(node.getRemainingDepth() != 0_su8);
+		zAssert(node.getRemainingDepth() > 0_su8);
 
 		const auto& posData  = node.getPositionData();
 		auto allEnemySquares = node.getPositionData().allEnemySquares().destSquaresPinConsidered;
 
+		auto remainingDepth = node.getRemainingDepth();
 		arena::Vector<MovePriority> priorities{ std::from_range, posData.legalMoves | std::views::transform([&](const Move& move) {
-			return MovePriority{ move, allEnemySquares, node.getRemainingDepth() - 1_su8 };
+			return MovePriority{ move, allEnemySquares, remainingDepth };
 		}) };
 
 		std::ranges::sort(priorities, [](const MovePriority& a, const MovePriority& b) {
@@ -108,8 +103,15 @@ namespace chess {
 		auto nonPVMoves = movePVMoveToFront(priorities, pvMove);
 		auto nonMaterialMoves = orderCapturesAndEvasionsFirst(node, allEnemySquares, nonPVMoves);
 		auto likelyBadMoves = orderKillerMovesFirst(killerMoves, nonMaterialMoves);
-		applyLateMoveReduction(node.getRemainingDepth(), node.getLevel(), likelyBadMoves);
 
+		if (remainingDepth - 1_su8 != 0_su8) {
+			auto baseOffset = std::ranges::distance(priorities.begin(), likelyBadMoves.begin());
+			for (auto&& [i, movePriority] : likelyBadMoves | std::views::enumerate) {
+				SafeUnsigned indexOffset{ static_cast<std::uint8_t>(baseOffset + i) };
+				movePriority.trim(indexOffset);
+			}
+		}
+		
 		zAssert(!priorities.empty());
 
 		return priorities;

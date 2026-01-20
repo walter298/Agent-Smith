@@ -117,7 +117,7 @@ namespace chess {
 		}
 
 		template<bool Maximizing>
-		MoveRating minimax(const Node& node, AlphaBeta alphaBeta) {
+		MoveRating tryShortCircuit(const Node& node, AlphaBeta alphaBeta) {
 			if (node.getPositionData().legalMoves.empty()) {
 				MoveRating ret;
 
@@ -191,8 +191,19 @@ namespace chess {
 
 			for (const auto& movePriority : movePriorities) {
 				Node child{ node, movePriority };
-				auto childRating = minimax<!Maximizing>(child, alphaBeta);
-				
+				auto childRating = tryShortCircuit<!Maximizing>(child, alphaBeta);
+
+				//ensure that we don't accidentally pick a move whose depth priority was trimmed by LMR
+				if (movePriority.isTrimmed()) {
+					auto mayChooseThisMove = Maximizing ? childRating.rating >= alphaBeta.getAlpha() :
+														  childRating.rating <= alphaBeta.getBeta();
+					if (mayChooseThisMove) {
+						MovePriority fullMovePriority{ movePriority.getMove(), node.getRemainingDepth() - 1_su8 };
+						Node newChild{ node, fullMovePriority };
+						childRating = tryShortCircuit<!Maximizing>(newChild, alphaBeta);
+					}
+				}
+
 				if constexpr (Maximizing) {
 					if (childRating.rating > bestRating.rating) {
 						bestRating = childRating;
@@ -248,7 +259,7 @@ namespace chess {
 		MoveRating startAlphaBetaSearch(const Position& pos, SafeUnsigned<std::uint8_t> depth, RepetitionMap repetitionMap) {
 			AlphaBeta alphaBeta;
 			Node root{ pos, depth, repetitionMap };
-			return minimax<Maximizing>(root, alphaBeta);
+			return tryShortCircuit<Maximizing>(root, alphaBeta);
 		}
 
 		template<bool Maximizing>
@@ -287,7 +298,7 @@ namespace chess {
 				}
 			}
 
-			//register threads
+			//register threads (only one of these objects exists for the lifetime of the program, so no duplicate registration)
 			auto threadIDs = pool.get_thread_ids();
 			for (auto threadID : threadIDs) {
 				arena::registerThread(threadID);
@@ -314,8 +325,6 @@ namespace chess {
 		: m_state{ std::make_shared<AsyncSearchState>() }
 	{
 	}
-
-	//rn2kb1r/4pppp/2p5/p4n2/P2q1PbP/1Pp2N2/3N2P1/R1BKQB1R w kq - 0 15
 
 	Move voteForBestMove(const std::vector<Searcher>& searchers, const std::vector<MoveRating>& moves) {
 		auto anyPathsLeadToCheckmate = std::ranges::any_of(moves, [](const MoveRating& m) {

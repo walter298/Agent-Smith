@@ -1,4 +1,4 @@
-Thread [29912]: 
+Thread [2400]: 
 registerThread called: 0
 registerThread called: 1
 registerThread called: 2
@@ -32,9 +32,5 @@ isready
 readyok
 position startpos moves e2e4
 go wtime 4800000 btime 4800000 winc 0 binc 0
-position startpos moves e2e4 b8c6 d2d4
-go wtime 4796672 btime 4791958 winc 0 binc 0
-position startpos moves e2e4 b8c6 d2d4 d7d5 e4d5
-go wtime 4791922 btime 4781525 winc 0 binc 0
 quit
 

@@ -89,7 +89,7 @@ int main(int argc, const char** argv) {
 	chess::arena::init();
 
 	if (argc == 1) {
-		constexpr chess::SafeUnsigned<std::uint8_t> DEFAULT_DEPTH{ 25 };
+		constexpr chess::SafeUnsigned<std::uint8_t> DEFAULT_DEPTH{ 8 };
 		chess::playUCI(DEFAULT_DEPTH);
 	} else if (std::strcmp(argv[1], "uci") == 0) {
 		chess::playUCIWithDepth(argv, argc);

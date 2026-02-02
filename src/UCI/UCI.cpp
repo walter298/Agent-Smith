@@ -20,7 +20,7 @@ namespace chess {
 		return buff.substr(currentPos);
 	}
 
-	GameState makeGameState(const std::string& commandStr, SafeUnsigned<std::uint8_t> depth) {
+	GameState makeGameState(const std::string& commandStr, SafeInt<std::uint8_t> depth) {
 		GameState ret;
 		
 		auto command = parsePositionCommand(commandStr);
@@ -37,7 +37,7 @@ namespace chess {
 		return ret;
 	}
 
-	void playUCI(SafeUnsigned<std::uint8_t> depth) {
+	void playUCI(SafeInt<std::uint8_t> depth) {
 		SearchThread searchThread;
 
 		std::istringstream iss;

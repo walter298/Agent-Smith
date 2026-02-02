@@ -11,7 +11,7 @@ export import Chess.Rating;
 export import Chess.Position.PieceState;
 
 export namespace chess {
-	using MoveVector = arena::Vector<Move>;
+	using MoveVector = StaticVector<Move>;
 
 	struct DestinationSquareData {
 		Bitboard destSquaresPinConsidered = 0;

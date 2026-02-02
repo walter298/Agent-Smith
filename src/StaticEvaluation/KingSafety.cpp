@@ -1,7 +1,12 @@
+module;
+
+#include <tracy/Tracy.hpp>
+
 module Chess.Evaluation:KingSafety;
 
 import std;
 
+import Chess.Assert;
 import Chess.Position.PieceState;
 import Chess.SquareZone;
 import :Constants;
@@ -29,36 +34,38 @@ namespace chess {
 
 	DistanceTable distanceTable;
 
-	Rating calcEnemyProximityPenaltyImpl(Square allyKingPos, Bitboard enemySquares, Rating penalty) {
-		auto ret = 0_rt;
+	double calcEnemyProximityPenaltyImpl(Square allyKingPos, Bitboard enemySquares, double penalty) {
+		auto ret = 0.0;
 
 		auto enemySquare = Square::None;
 		while (nextSquare(enemySquares, enemySquare)) {
 			auto distFromKing = distanceTable(allyKingPos, enemySquare);
-			ret += penalty * static_cast<Rating>(distFromKing);
+			ret += penalty / std::max(static_cast<double>(distFromKing), 1.0);
 		}
 
 		return ret;
 	}
 
 	Rating calcEnemyProximityPenalty(Square allyKingPos, const PieceState& enemyPieces, Bitboard enemyDestSquares) {
-		auto ret = 0_rt;
+		auto ret = 0.0;
 
 		//penalize enemy pieces being close to the king
 		auto pieceTypes = ALL_PIECE_TYPES | std::views::drop(1); //exclude king
 		for (auto pieceType : pieceTypes) {
 			auto enemyPieceLocations = enemyPieces[pieceType];
-			auto penalty = pieceRatings[pieceType] * PIECE_PROXIMITY_FACTOR;
+			auto penalty = static_cast<double>(pieceRatings[pieceType].get()) * PIECE_PROXIMITY_FACTOR;
 			ret += calcEnemyProximityPenaltyImpl(allyKingPos, enemyPieceLocations, penalty);
 		}
 
 		//penalize enemy destination squares close to the king
 		ret += calcEnemyProximityPenaltyImpl(allyKingPos, enemyDestSquares, DESTINATION_SQUARE_PROXIMITY_FACTOR);
 
-		return ret;
+		return Rating{ static_cast<Rating::Int>(ret) };
 	}
 
 	Rating calcKingSafetyRating(const Position& pos, const PositionData& posData) {
+		ZoneScoped;
+
 		auto ret = 0_rt;
 		auto [white, black] = pos.getColorSides();
 

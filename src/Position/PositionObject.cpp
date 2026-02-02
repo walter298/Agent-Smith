@@ -151,6 +151,20 @@ namespace chess {
         return fromFile != destFile;
     }
 
+    bool Position::setEnPassant(Move& move, const ImmutableTurnData& turnData) const {
+        if (isEnPessant(move)) {
+            move.capturedPawnSquareEnPassant = turnData.enemies.doubleJumpedPawn;
+            move.capturedPiece = Pawn;
+            return true;
+        }
+        return false;
+    }
+
+    bool Position::setEnPassant(Move& move) const {
+        auto turnData = getTurnData();
+        return setEnPassant(move, turnData);
+    }
+
     void Position::move(std::string_view moveStr) {
         zAssert(moveStr.size() == 4 || moveStr.size() == 5);
 
@@ -170,10 +184,7 @@ namespace chess {
         move.capturedPiece = turnData.enemies.findPiece(*to);
 
         //detect en passant capture
-        if (isEnPessant(move)) {
-            move.capturedPawnSquareEnPassant = turnData.enemies.doubleJumpedPawn;
-            move.capturedPiece = Pawn;
-        }
+        setEnPassant(move, turnData);
 
         if (moveStr.size() == 5) { //if there is a pawn promotion
             move.promotionPiece = parsePiece(moveStr[4]);

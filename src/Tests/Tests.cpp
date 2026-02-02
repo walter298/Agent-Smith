@@ -239,14 +239,14 @@ namespace chess {
 
 			std::string moves;
 			for (int i = 0; i < 20; i++) {
-				auto bestMove = getSearchFunction().findBestMove(pos, 6_su8, rMap);
-				if (!bestMove) {
+				auto [bestMove, _] = getSearchFunction().findBestMove(pos, 6_su8, rMap);
+				if (bestMove == Move::null()) {
 					std::println("POTENTIAL Error: no best move found in testThatLegalMovesExist4 at ply {}!", i + 1);
 					std::println("Moves: {}", moves);
 					return;
 				}
-				pos.move(*bestMove);
-				moves += bestMove->getUCIString() + " ";
+				pos.move(bestMove);
+				moves += bestMove.getUCIString() + " ";
 			}
 		}
 
@@ -473,9 +473,9 @@ namespace chess {
 			RepetitionMap rMap;
 			rMap.push(pos);
 
-			auto bestMove = getSearchFunction().findBestMove(pos, 6_su8, rMap);
-			assert_equality(bestMove->from, Square::F3);
-			assert_equality(bestMove->to, Square::G2);
+			auto [bestMove, _] = getSearchFunction().findBestMove(pos, 6_su8, rMap);
+			assert_equality(bestMove.from, Square::F3);
+			assert_equality(bestMove.to, Square::G2);
 		}
 
 		void runAllTests() {

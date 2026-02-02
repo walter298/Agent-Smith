@@ -1,3 +1,7 @@
+module;
+
+#include <tracy/Tracy.hpp>
+
 module Chess.Evaluation;
 
 import std;
@@ -17,7 +21,7 @@ namespace chess {
 		auto getAttackedPiecesRating = [&](const PieceState& pieceState, Bitboard enemySquares) -> Rating {
 			auto attackedPieces = pieceState.calcAllLocations() & enemySquares;
 			auto attackedPieceCount = std::popcount(attackedPieces);
-			return static_cast<Rating>(attackedPieceCount) * ATTACKED_PIECE_RATING;
+			return Rating{ static_cast<Rating::Int>(attackedPieceCount) } * ATTACKED_PIECE_RATING;
 		};
 		auto allWhiteSquares = posData.whiteSquares.destSquaresPinConsidered;
 		auto allBlackSquares = posData.blackSquares.destSquaresPinConsidered;
@@ -34,8 +38,16 @@ namespace chess {
 	}
 
 	Rating staticEvaluation(const Position& pos, const PositionData& posData) {
-		return calcCastleRating(pos) + calcMaterialRating(pos) + calcPawnStructureRating(pos) + calcAttackRating(pos, posData) + 
-			   calcKingSafetyRating(pos, posData) + calcPieceDevelopmentRating(pos, posData);
+		ZoneScoped;
+
+		auto castleRating = calcCastleRating(pos);
+		auto materialRating = calcMaterialRating(pos);
+		auto pawnStructureRating = calcPawnStructureRating(pos);
+		auto attackRating = calcAttackRating(pos, posData);
+		auto kingSafetyRating = calcKingSafetyRating(pos, posData);
+		auto developmentRating = calcPieceDevelopmentRating(pos, posData);
+
+		return castleRating + materialRating + pawnStructureRating + attackRating + kingSafetyRating + developmentRating;
 	}
 
 	Rating getPieceRating(Piece piece) {

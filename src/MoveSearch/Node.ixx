@@ -15,25 +15,21 @@ export namespace chess {
 		Position m_pos;
 		PositionData m_positionData;
 		std::reference_wrapper<RepetitionMap> m_repetitionMap;
-		SafeUnsigned<std::uint8_t> m_level{ 0 };
-		SafeUnsigned<std::uint8_t> m_levelsToSearch{ 0 };
+		SafeInt<std::uint8_t> m_level{ 0 };
+		SafeInt<std::uint8_t> m_levelsToSearch{ 0 };
 		bool m_inAttackSequence = false;
 		Rating m_materialExchanged = 0_rt;
 		Rating m_materialSignSwap = 1_rt;
 		bool m_isChild = true;
-		arena::MemoryRegion* m_memoryRegion = nullptr;
-		void* m_offset = nullptr;
-
+		
 		Node(const Position& pos, RepetitionMap& repetitionMap)
 			: m_pos{ pos }, m_positionData{ calcPositionData(pos) }, m_repetitionMap{ repetitionMap }
 		{
 		};
 	public:
-		Node(const Position& root, SafeUnsigned<std::uint8_t> maxDepth, RepetitionMap& repetitionMap)
+		Node(const Position& root, SafeInt<std::uint8_t> maxDepth, RepetitionMap& repetitionMap)
 			: Node{ root, repetitionMap }
 		{
-			m_memoryRegion = arena::getMemoryRegion();
-			m_offset = m_memoryRegion->getOffset();
 			m_levelsToSearch = maxDepth;
 			m_isChild = false;
 			if (!root.isWhite()) {
@@ -43,8 +39,6 @@ export namespace chess {
 		Node(const Node& parent, const MovePriority& movePriority)
 			: Node{ Position{ parent.m_pos, movePriority.getMove() }, parent.m_repetitionMap }
 		{
-			m_memoryRegion = parent.m_memoryRegion;
-			m_offset = m_memoryRegion->getOffset();
 			m_repetitionMap.get().push(m_pos);
 			m_positionData = calcPositionData(m_pos);
 			m_level = parent.m_level + 1_su8;
@@ -56,7 +50,6 @@ export namespace chess {
 			if (m_isChild) {
 				m_repetitionMap.get().pop(m_pos);
 			}
-			m_memoryRegion->resetToOffset(m_offset);
 		}
 
 		bool inAttackSequence() const {
@@ -82,11 +75,11 @@ export namespace chess {
 			return m_positionData;
 		}
 
-		SafeUnsigned<std::uint8_t> getLevel() const {
+		SafeInt<std::uint8_t> getLevel() const {
 			return m_level;
 		}
 
-		SafeUnsigned<std::uint8_t> getRemainingDepth() const {
+		SafeInt<std::uint8_t> getRemainingDepth() const {
 			return m_levelsToSearch;
 		}
 

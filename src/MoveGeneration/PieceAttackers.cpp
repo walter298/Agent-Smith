@@ -1,6 +1,7 @@
 module;
 
 #include <magic_enum/magic_enum.hpp>
+#include <tracy/Tracy.hpp>
 
 module Chess.MoveGeneration:PieceAttackers;
 
@@ -84,6 +85,8 @@ namespace chess {
 	}
 
 	AttackerData calcAttackers(bool isWhite, const PieceState& enemies, Bitboard empty, Bitboard attackedPiece) {
+		ZoneScoped;
+
 		AttackerData ret;
 
 		//see if the enemy king is attacking the piece (impossible if attacked piece is a king or sliding piece)
@@ -104,9 +107,6 @@ namespace chess {
 		} else {
 			calcPawnAttackers(ret, attackedPiece, enemies[Pawn], blackPawnAttackGenerator);
 		}
-
-//		printSquares("Indirect rays", ret.indirectRays);
-//		printSquares("Direct rays", ret.rays);
 
 		return ret;
 	}

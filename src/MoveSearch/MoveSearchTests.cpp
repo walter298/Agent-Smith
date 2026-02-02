@@ -6,7 +6,7 @@ import :MoveOrdering;
 
 namespace chess {
 	namespace tests {
-		void printPriorities(const arena::Vector<MovePriority>& priorities) {
+		void printPriorities(const StaticVector<MovePriority>& priorities) {
 			for (const auto& priority : priorities) {
 				auto [move, depth] = std::tuple{ priority.getMove(), priority.getDepth() };
 				std::println("[{}, {}]", move.getUCIString(), static_cast<unsigned int>(depth.get()));

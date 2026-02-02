@@ -2,29 +2,32 @@ export module Chess.Rating;
 
 import std;
 
+import Chess.Assert;
+import Chess.SafeInt;
+
 export namespace chess {
-	using Rating = float;
+	using Rating = SafeInt<std::int32_t>;
 
 	constexpr Rating operator""_rt(unsigned long long rating) {
-		return static_cast<Rating>(rating);
+		zAssert(rating <= std::numeric_limits<Rating::Int>::max());
+		return Rating{ static_cast<Rating::Int>(rating) };
 	}
 
 	constexpr Rating operator""_rt(long double rating) {
-		return static_cast<Rating>(rating);
+		return Rating{ static_cast<Rating::Int>(rating) };
 	}
 
 	template<bool Maximizing>
 	consteval Rating worstPossibleRating() {
 		if constexpr (Maximizing) {
-			return std::numeric_limits<Rating>::lowest();
+			return Rating{ std::numeric_limits<Rating::Int>::lowest() };
 		} else {
-			return std::numeric_limits<Rating>::max();
+			return Rating{ std::numeric_limits<Rating::Int>::max() };
 		}
 	}
 
 	template<bool Maximizing>
 	consteval Rating checkmatedRating() {
-		constexpr auto RET = -1000000_rt;
-		return Maximizing ? RET : -RET;
+		return Maximizing ? worstPossibleRating<Maximizing>() + 1_rt : worstPossibleRating<Maximizing>() - 1_rt;
 	}
 }

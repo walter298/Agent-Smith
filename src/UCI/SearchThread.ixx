@@ -10,7 +10,7 @@ import Chess.SafeInt;
 namespace chess {
 	struct GameState {
 		Position pos;
-		SafeUnsigned<std::uint8_t> depth{ 6_su8 };
+		SafeInt<std::uint8_t> depth{ 6_su8 };
 		RepetitionMap repetitionMap;
 	};
 
@@ -32,6 +32,6 @@ namespace chess {
 
 		void stop();
 		void setPosition(GameState gameState);
-		void go(SafeUnsigned<std::uint8_t> depth);
+		void go(SafeInt<std::uint8_t> depth);
 	};
 }

@@ -28,17 +28,17 @@ namespace chess {
 	private:
 		Move m_move;
 		Rating m_exchangeRating = 0_rt;
-		SafeUnsigned<std::uint8_t> m_recommendedDepth{ 0 };
+		SafeInt<std::uint8_t> m_recommendedDepth{ 0 };
 		bool m_trimmed = false;
 	public:
 		MovePriority() = default;
 
-		MovePriority(const Move& move, Bitboard enemySquares, SafeUnsigned<std::uint8_t> depth) :
+		MovePriority(const Move& move, Bitboard enemySquares, SafeInt<std::uint8_t> depth) :
 			m_move{ move }, m_recommendedDepth{ depth - 1_su8 },
 			m_exchangeRating{ calcExchangeRating(move, enemySquares) }
 		{
 		}
-		MovePriority(const Move& move, SafeUnsigned<std::uint8_t> depth)
+		MovePriority(const Move& move, SafeInt<std::uint8_t> depth)
 			: m_move{ move }, m_recommendedDepth { depth }
 		{
 		}
@@ -53,13 +53,13 @@ namespace chess {
 			return table;
 		}
 	public:
-		void trim(SafeUnsigned<std::uint8_t> moveIndex) {
+		void trim(SafeInt<std::uint8_t> moveIndex) {
 			m_trimmed = true;
 
 			static const auto LOG_TABLE = makeLog2Table();
 			auto logDepth = LOG_TABLE[(m_recommendedDepth + 1_su8).get()];
 			auto logI = LOG_TABLE[(moveIndex + 1_su8).get()];
-			SafeUnsigned reducedDepth{ static_cast<std::uint8_t>(0.99 + (logDepth * logI / 3.14)) }; //add 0.5 to round up
+			SafeInt reducedDepth{ static_cast<std::uint8_t>(0.99 + (logDepth * logI / 3.14)) }; //add 0.5 to round up
 
 			auto subbed = m_recommendedDepth + 1_su8; //m_recommended depth is actually the original depth - 1
 			subbed.subToMin(reducedDepth, 0_su8);
@@ -74,7 +74,7 @@ namespace chess {
 		const Move& getMove() const {
 			return m_move;
 		}
-		SafeUnsigned<std::uint8_t> getDepth() const {
+		SafeInt<std::uint8_t> getDepth() const {
 			return m_recommendedDepth;
 		}
 		Rating getExchangeRating() const {

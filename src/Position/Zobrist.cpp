@@ -54,7 +54,7 @@ namespace chess {
 	}
 
 	//NOTE: each castling # contains 4 pieces of information, whether the king has castle kingside/queenside and whether it CAN castle kingside/queenside
-	std::uint64_t getZobristCastleCode(SafeUnsigned<std::uint8_t> whiteCastling, SafeUnsigned<std::uint8_t> blackCastling) {
+	std::uint64_t getZobristCastleCode(SafeInt<std::uint8_t> whiteCastling, SafeInt<std::uint8_t> blackCastling) {
 		whiteCastling <<= 4;
 		auto index = whiteCastling | blackCastling;
 		return codeMap.castleCodeMap[static_cast<size_t>(index.get())];

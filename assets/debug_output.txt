@@ -1,25 +1,4 @@
-Thread [2400]: 
-registerThread called: 0
-registerThread called: 1
-registerThread called: 2
-registerThread called: 3
-registerThread called: 4
-registerThread called: 5
-registerThread called: 6
-registerThread called: 7
-registerThread called: 8
-registerThread called: 9
-registerThread called: 10
-registerThread called: 11
-registerThread called: 12
-registerThread called: 13
-registerThread called: 14
-registerThread called: 15
-registerThread called: 16
-registerThread called: 17
-registerThread called: 18
-registerThread called: 19
-registerThread called: 20
+Thread [27228]: 
 uci
 id name Agent Smith
 id author Walter Stein-Smith
@@ -32,5 +11,9 @@ isready
 readyok
 position startpos moves e2e4
 go wtime 4800000 btime 4800000 winc 0 binc 0
+position startpos moves e2e4 b8c6 d2d4
+go wtime 4797984 btime 4792614 winc 0 binc 0
+position startpos moves e2e4 b8c6 d2d4 c6b8 c2c4
+go wtime 4795453 btime 4769479 winc 0 binc 0
 quit
 

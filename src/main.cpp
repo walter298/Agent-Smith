@@ -2,12 +2,15 @@ import std;
 
 import Chess.Arena;
 import Chess.BitboardImage;
+import Chess.Evaluation;
 import Chess.MoveGeneration;
 import Chess.UCI;
-import Chess.MeasureMoveTime;
 import Chess.Move;
 import Chess.SafeInt;
 import Chess.Tests;
+import Chess.PositionCommand;
+import Chess.MoveSearch;
+import Chess.Position.RepetitionMap;
 
 namespace chess {
 	void handleBitboardInput(const char** argv, int argc) {
@@ -53,7 +56,7 @@ namespace chess {
 			std::println("Error: uci with depth requires 1 argument: [depth]");
 			return;
 		}
-		SafeUnsigned<std::uint8_t> depth{ 0 };
+		SafeInt<std::uint8_t> depth{ 0 };
 		auto depthStr = argv[2];
 		auto depthStrEnd = depthStr + std::strlen(depthStr);
 
@@ -63,9 +66,9 @@ namespace chess {
 			std::println("Error: could not parse depth argument");
 			return;
 		}
-		depth = SafeUnsigned{ temp };
+		depth = SafeInt{ temp };
 
-		if (depth < 1_su8) {
+		if (depth < SafeInt<std::uint8_t>{ 1 }) {
 			std::println("Error: depth must be at least 1");
 			return;
 		}
@@ -81,15 +84,48 @@ namespace chess {
 		std::println("draw_bitboard [bitboard, base, filename]\t- Draw a bitboard image");
 		std::println("generate_bmi_table");
 		std::println("see_move_priorities [fen]");
-		std::println("measure_move_time");
+		std::println("evaluate [depth] [fen]");
+	}
+
+	void printPositionEvaluation(const char** argv, int argc) {
+		if (argc < 3) {
+			std::println("Error: invalid FEN");
+			return;
+		}
+
+		std:uint8_t depthTemp = 0;
+		auto depthParseRes = std::from_chars(argv[2], argv[2] + std::strlen(argv[2]), depthTemp);
+		if (depthParseRes.ec != std::error_code{}) {
+			std::println("Error parsing depth: {}", std::make_error_code(depthParseRes.ec).value());
+			return;
+		}
+		SafeInt depth{ depthTemp };
+
+		//parse fen
+		using namespace std::literals;
+		std::string fen = argv[3];
+		for (int i = 3; i < argc; i++) {
+			fen += " "s + argv[i];
+		}
+
+		std::println("Fen: {}", fen);
+
+		Position pos;
+		pos.setPos(parsePositionCommand(std::format("fen {}", fen)));
+		auto posData = calcPositionData(pos);
+
+		RepetitionMap map;
+		AsyncSearch search;
+		auto [bestMove, rating] = search.findBestMove(pos, depth, map);
+		std::println("{} {}", bestMove.getUCIString(), rating.get());
 	}
 }
 
 int main(int argc, const char** argv) {
-	chess::arena::init();
+	//chess::arena::init();
 
 	if (argc == 1) {
-		constexpr chess::SafeUnsigned<std::uint8_t> DEFAULT_DEPTH{ 8 };
+		constexpr chess::SafeInt<std::uint8_t> DEFAULT_DEPTH{ 8 };
 		chess::playUCI(DEFAULT_DEPTH);
 	} else if (std::strcmp(argv[1], "uci") == 0) {
 		chess::playUCIWithDepth(argv, argc);
@@ -101,8 +137,8 @@ int main(int argc, const char** argv) {
 		chess::printCommandLineArgumentOptions();
 	} else if (std::strcmp(argv[1], "generate_bmi_table") == 0) {
 		chess::storeBMITable();
-	} else if (std::strcmp(argv[1], "measure_move_time") == 0) {
-		chess::measureMoveTime();
+	} else if (std::strcmp(argv[1], "evaluate") == 0) {
+		chess::printPositionEvaluation(argv, argc);
 	} else {
 		std::print("Invalid command line arguments. ");
 		chess::printCommandLineArgumentOptions();

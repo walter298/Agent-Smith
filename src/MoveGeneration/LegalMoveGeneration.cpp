@@ -1,6 +1,7 @@
 module;
 
 #include <magic_enum/magic_enum.hpp>
+#include <tracy/Tracy.hpp>
 
 module Chess.MoveGeneration:LegalMoveGeneration;
 
@@ -45,15 +46,15 @@ namespace chess {
 				constexpr std::array PROMOTION_PIECES{ Queen, Rook, Bishop, Knight };
 				for (auto piece : PROMOTION_PIECES) {
 					move.promotionPiece = piece;
-					moves.push_back(move);
+					moves.add(move);
 				}
 			} else {
-				moves.push_back(move);
+				moves.add(move);
 			}
 		};
 
 		static constexpr auto DEFAULT_MOVE_ADDER = [](MoveVector& moves, const Move& move) {
-			moves.push_back(move);
+			moves.add(move);
 		};
 
 		template<MoveAdder MoveAdder>
@@ -114,6 +115,8 @@ namespace chess {
 
 		template<PawnMoveGenerator PawnGenerator>
 		static Bitboard calcNonPinDestSquares(const PieceState& pieces, const PieceLocationData& pieceLocations, PawnGenerator pawnMoveGenerator) {
+			ZoneScoped;
+
 			Bitboard ret = 0;
 			ret |= queenMoveGenerator(pieces[Queen], pieceLocations.empty).all();
 			ret |= bishopMoveGenerator(pieces[Bishop], pieceLocations.empty).all();
@@ -144,7 +147,7 @@ namespace chess {
 				if ((newSlidingAttackers.attackers.calcAllLocations() & ~kingAttackers.attackers.calcAllLocations()) != 0) { //ally pawn is actually pinned from behind the enemy pawn
 					continue;
 				}
-				posData.legalMoves.emplace_back(from, enPassantData.squareInFrontOfEnemyPawn, jumpedEnemyPawn, Pawn, Pawn, Piece::None);
+				posData.legalMoves.add(from, enPassantData.squareInFrontOfEnemyPawn, jumpedEnemyPawn, Pawn, Pawn, Piece::None);
 				MoveGen gen{ 0, makeBitboard(enPassantData.squareInFrontOfEnemyPawn) };
 
 				posData.getAllySquares().allDestSquares |= gen.all();
@@ -213,6 +216,8 @@ namespace chess {
 
 	template<bool DrawingBitboards>
 	PositionData calcAllLegalMovesImpl(const Position& pos) {
+		ZoneScoped;
+
 		auto turnData = pos.getTurnData();
 
 		if (turnData.isWhite) {

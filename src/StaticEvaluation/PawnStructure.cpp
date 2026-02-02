@@ -1,12 +1,13 @@
 module Chess.Evaluation:PawnStructure;
 
 import Chess.RankCalculator;
+import Chess.PositionCommand;
 import :Constants;
 
 namespace chess {
 	template<bool MovingDown = false>
 	Rating calcPawnAdvancementRatingImpl(Bitboard pawns) {
-		Rating ret = 0.0;
+		Rating ret = 0_rt;
 
 		auto currSquare = Square::None;
 		while (nextSquare(pawns, currSquare)) {
@@ -14,7 +15,7 @@ namespace chess {
 			if constexpr (MovingDown) {
 				rank = 9 - rank;
 			}
-			auto pawnValue = static_cast<Rating>(rank) * PAWN_ADVANCEMENT_RATING;
+			auto pawnValue = Rating{ static_cast<Rating::Int>(rank) } * PAWN_ADVANCEMENT_RATING;
 			ret += pawnValue;
 		}
 
@@ -62,7 +63,7 @@ namespace chess {
 		}
 
 		if (islandCount > 1) {
-			return PAWN_ISLAND_PENALTY * static_cast<Rating>(islandCount);
+			return PAWN_ISLAND_PENALTY * Rating{ static_cast<Rating::Int>(islandCount) };
 		} else {
 			return 0_rt;
 		}
@@ -92,9 +93,9 @@ namespace chess {
 
 		if (!(threePawnIslandRating < twoPawnIslandRating && twoPawnIslandRating < onePawnIslandRating)) {
 			std::println("Pawn island rating test failed");
-			std::println("Three pawn islands: {:.6f}", threePawnIslandRating);
-			std::println("Two pawn islands: {:.6f}", twoPawnIslandRating);
-			std::println("One pawn island {:.6f}", onePawnIslandRating);
+			std::println("Three pawn islands: {}", threePawnIslandRating.get());
+			std::println("Two pawn islands: {}", twoPawnIslandRating.get());
+			std::println("One pawn island {}", onePawnIslandRating.get());
 		}
 	}
 

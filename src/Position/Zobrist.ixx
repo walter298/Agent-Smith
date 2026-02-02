@@ -10,7 +10,7 @@ export namespace chess {
 	class Position;
 
 	std::uint64_t getZobristPieceCode(Square square, Piece piece, bool isWhite);
-	std::uint64_t getZobristCastleCode(SafeUnsigned<std::uint8_t> whiteCastling, SafeUnsigned<std::uint8_t> blackCastling);
+	std::uint64_t getZobristCastleCode(SafeInt<std::uint8_t> whiteCastling, SafeInt<std::uint8_t> blackCastling);
 	std::uint64_t getZobristDoubleJumpSquareCode(Square doubleJumpedPawnSquare);
 	std::uint64_t getZobristTurnCode(bool isWhite);
 	std::uint64_t getStartingZobristHash(const Position& pos);

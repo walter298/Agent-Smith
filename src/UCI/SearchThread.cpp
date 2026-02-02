@@ -34,8 +34,8 @@ namespace chess {
 			auto stateCopy = m_state;
 			ul.unlock();
 
-			auto move = m_searcher.findBestMove(stateCopy.pos, 255_su8, stateCopy.repetitionMap);
-			if (!move) { //if the position has no legal moves, then reset to an invalid position state
+			auto [move, _] = m_searcher.findBestMove(stateCopy.pos, 255_su8, stateCopy.repetitionMap);
+			if (move == Move::null()) { //if the position has no legal moves, then reset to an invalid position state
 				std::scoped_lock l{ m_mutex };
 				if (!m_calculationRequested) { //ensure that we don't flag that we are not in a valid position after a new calculation request
 					m_shouldPonder = false;
@@ -60,15 +60,16 @@ namespace chess {
 				m_calculationRequested = false;
 			}
 
-			if (auto bestMove = m_searcher.findBestMove(stateCopy.pos, stateCopy.depth, stateCopy.repetitionMap)) {
+			auto [bestMove, _] = m_searcher.findBestMove(stateCopy.pos, stateCopy.depth, stateCopy.repetitionMap);
+			if (bestMove != Move::null()) {
 				if (!stopToken.stop_requested()) {
-					std::println("{}", bestMove->getUCIString()); //prepends "bestmove"
+					std::println("{}", bestMove.getUCIString()); //prepends "bestmove"
 					std::fflush(stdout);
 
 					//don't wait for the GUI to send the next position - start thinking immediately on the next move
 					std::scoped_lock l{ m_mutex };
 					if (!m_calculationRequested) { //don't start thinking on opponent's time if it is our time to calculate
-						m_state.pos.move(*bestMove);
+						m_state.pos.move(bestMove);
 						m_shouldPonder = true;
 					}
 				}
@@ -79,9 +80,7 @@ namespace chess {
 		}
 	}
 
-	SearchThread::SearchThread()
-		: m_searcher{}
-	{
+	SearchThread::SearchThread() {
 		m_thread = std::jthread{ [this](std::stop_token stopToken){ run(stopToken); } };
 	}
 	SearchThread::~SearchThread() {
@@ -98,7 +97,7 @@ namespace chess {
 		m_cv.notify_one();
 	}
 
-	void SearchThread::go(SafeUnsigned<std::uint8_t> depth) {
+	void SearchThread::go(SafeInt<std::uint8_t> depth) {
 		{
 			std::scoped_lock l{ m_mutex };
 			m_calculationRequested = true;

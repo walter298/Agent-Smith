@@ -7,7 +7,7 @@ module Chess.Move;
 import Chess.Square;
 
 namespace chess {
-	std::string Move::getUCIString() const { //todo: handle pawn promotions 
+	std::string Move::getUCIString() const { 
 		auto fromName = magic_enum::enum_name(from);
 		auto toName   = magic_enum::enum_name(to);
 

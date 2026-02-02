@@ -1,3 +1,7 @@
+module;
+
+#include <tracy/Tracy.hpp>
+
 module Chess.MoveSearch:MoveOrdering;
 
 import Chess.Assert;
@@ -5,7 +9,7 @@ import Chess.Rating;
 import Chess.Evaluation;
 import Chess.MoveGeneration;
 
-import :PositionTable;
+import :TranspositionTable;
 
 namespace chess {
 	struct PieceData {
@@ -72,7 +76,7 @@ namespace chess {
 	}
 
 	//returns non-PV moves
-	auto movePVMoveToFront(arena::Vector<MovePriority>& priorities, Move pvMove) {
+	auto movePVMoveToFront(StaticVector<MovePriority>& priorities, Move pvMove) {
 		if (pvMove != Move::null()) {
 			auto pvMoveIt = std::ranges::find_if(priorities, [&](const MovePriority& p) {
 				return p.getMove() == pvMove;
@@ -85,14 +89,16 @@ namespace chess {
 		return std::ranges::subrange{ priorities.begin(), priorities.end() };
 	}
 
-	arena::Vector<MovePriority> getMovePrioritiesImpl(const Node& node, const Move& pvMove, std::span<const Move> killerMoves) {
+	StaticVector<MovePriority> getMovePrioritiesImpl(const Node& node, const Move& pvMove, std::span<const Move> killerMoves) {
+		ZoneScoped;
+
 		zAssert(node.getRemainingDepth() > 0_su8);
 
 		const auto& posData  = node.getPositionData();
 		auto allEnemySquares = node.getPositionData().allEnemySquares().destSquaresPinConsidered;
 
 		auto remainingDepth = node.getRemainingDepth();
-		arena::Vector<MovePriority> priorities{ std::from_range, posData.legalMoves | std::views::transform([&](const Move& move) {
+		StaticVector<MovePriority> priorities{ posData.legalMoves | std::views::transform([&](const Move& move) {
 			return MovePriority{ move, allEnemySquares, remainingDepth };
 		}) };
 
@@ -107,7 +113,7 @@ namespace chess {
 		if (remainingDepth - 1_su8 != 0_su8) {
 			auto baseOffset = std::ranges::distance(priorities.begin(), likelyBadMoves.begin());
 			for (auto&& [i, movePriority] : likelyBadMoves | std::views::enumerate) {
-				SafeUnsigned indexOffset{ static_cast<std::uint8_t>(baseOffset + i) };
+				SafeInt indexOffset{ static_cast<std::uint8_t>(baseOffset + i) };
 				movePriority.trim(indexOffset);
 			}
 		}
@@ -117,7 +123,7 @@ namespace chess {
 		return priorities;
 	}
 
-	arena::Vector<MovePriority> getMovePriorities(const Node& node, const Move& pvMove, std::span<const Move> killerMoves) {
+	StaticVector<MovePriority> getMovePriorities(const Node& node, const Move& pvMove, std::span<const Move> killerMoves) {
 		return getMovePrioritiesImpl(node, pvMove, killerMoves);
 	}
 }

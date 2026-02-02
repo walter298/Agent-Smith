@@ -11,24 +11,24 @@ export namespace chess {
 		static constexpr auto HAS_KINGSIDE_INDEX = 1;
 		static constexpr auto CAN_QUEENSIDE_INDEX = 2;
 		static constexpr auto HAS_QUEENSIDE_INDEX = 3;
-		static constexpr SafeUnsigned<std::uint8_t> DEFAULT{ 0b0101 };
+		static constexpr SafeInt<std::uint8_t> DEFAULT{ 0b0101 };
 
-		SafeUnsigned<std::uint8_t> m_data{ DEFAULT };
+		SafeInt<std::uint8_t> m_data{ DEFAULT };
 
 		template<auto Index>
 		constexpr bool getBit() const {
-			return ((1_su8 << Index) & m_data) != 0_su8;
+			return ((SafeInt<std::uint8_t>{ 1 } << Index) & m_data) != 0_su8;
 		}
 		template<auto Index>
 		constexpr void setBit() {
-			m_data |= (1_su8 << Index);
+			m_data |= (SafeInt<std::uint8_t>{ 1 } << Index);
 		}
 		template<auto Index>
 		constexpr void unsetBit() {
-			m_data &= ~(1_su8 << Index);
+			m_data &= ~(SafeInt<std::uint8_t>{ 1 } << Index);
 		}
 	public:
-		SafeUnsigned<std::uint8_t> get() const {
+		SafeInt<std::uint8_t> get() const {
 			return m_data;
 		}
 		constexpr bool canCastleKingside() const {

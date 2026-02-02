@@ -6,10 +6,10 @@ import :Constants;
 
 namespace chess {
 	Rating getPieceRating(const PieceState& pieces) {
-		Rating ret = 0.0;
+		auto ret = 0_rt;
 
 		for (const auto& piece : ALL_PIECE_TYPES | std::views::drop(1)) { //don't count the king
-			ret += (pieceRatings[piece] * static_cast<Rating>(std::popcount(pieces[piece])));;
+			ret += pieceRatings[piece] * Rating{ static_cast<Rating::Int>(std::popcount(pieces[piece])) };
 		}
 
 		return ret;
@@ -17,6 +17,10 @@ namespace chess {
 
 	Rating calcMaterialRating(const Position& pos) {
 		auto [white, black] = pos.getColorSides();
-		return getPieceRating(white) - getPieceRating(black);
+		auto whiteMaterial = getPieceRating(white);
+		auto blackMaterial = getPieceRating(black);
+
+		//std::println("White: {}; Black: {}", whiteMaterial.get(), blackMaterial.get());
+		return whiteMaterial - blackMaterial;
 	}
 }

@@ -19,7 +19,7 @@ import Chess.Rating;
 import :MoveOrdering;
 import :MoveHasher;
 import :Node;
-import :PositionTable;
+import :TranspositionTable;
 
 namespace chess {
 	class AlphaBeta {
@@ -59,12 +59,12 @@ namespace chess {
 		Move move = Move::null();
 		Rating rating = 0_rt;
 		bool invalidTTEntry = false;
-		std::optional<SafeUnsigned<std::uint8_t>> checkmateLevel = std::nullopt;
+		std::optional<SafeInt<std::uint8_t>> checkmateLevel = std::nullopt;
 	};
 
 	class Searcher {
 	private:
-		static constexpr SafeUnsigned<std::uint8_t> RANDOMIZATION_CUTOFF{ 3 };
+		static constexpr SafeInt<std::uint8_t> RANDOMIZATION_CUTOFF{ 3 }; //todo: make this a fraction of the max depth 
 		std::mt19937 m_urbg;
 		bool m_helper = false;
 		const std::atomic_bool* m_stopRequested;
@@ -77,7 +77,7 @@ namespace chess {
 		};
 		std::array<KillerMoveEntries, MAX_DEPTH> m_killerMoves{};
 	public:
-		SafeUnsigned<std::uint8_t> depth = 0_su8;
+		SafeInt<std::uint8_t> depth = 0_su8;
 
 		Searcher(bool helper, const std::atomic_bool* stopRequested)
 			: m_urbg{ std::random_device{}() }, m_helper{ helper }, m_stopRequested{ stopRequested }
@@ -92,7 +92,7 @@ namespace chess {
 			zAssert(maxScoreDiff >= 0_rt);
 
 			auto ret = 1_rt;
-			ret += std::pow(2_rt, static_cast<Rating>(depth.get()));
+			ret += Rating{ static_cast<Rating::Int>(std::pow(2.0, static_cast<double>(depth.get()))) };
 			
 			//give up to 20% boost depending on how good the score is
 			if (maxScoreDiff != 0_rt) {
@@ -100,7 +100,7 @@ namespace chess {
 			}
 
 			if (moveRating.checkmateLevel) {
-				ret += ret / static_cast<Rating>(moveRating.checkmateLevel->get());
+				ret += ret / std::max(static_cast<Rating>(moveRating.checkmateLevel->get()), 1_rt);
 			}
 
 			return ret;
@@ -118,6 +118,8 @@ namespace chess {
 
 		template<bool Maximizing>
 		MoveRating tryShortCircuit(const Node& node, AlphaBeta alphaBeta) {
+			ZoneScoped;
+
 			if (node.getPositionData().legalMoves.empty()) {
 				MoveRating ret;
 
@@ -135,7 +137,7 @@ namespace chess {
 			auto pvMove = Move::null();
 
 			if (m_stopRequested->load()) {
-				return { Move::null(), node.getRating(), false };
+				return { Move::null(), node.getRating(), true };
 			}
 
 			bool canUseEntry = !(m_helper && node.getLevel() == 0_su8);
@@ -144,8 +146,13 @@ namespace chess {
 				if (auto entryRes = getPositionEntry(node.getPos(), node.getRemainingDepth())) {
 					const auto& entry = *entryRes;
 					pvMove = entry.bestMove;
-					
-					if (!wouldMakeRepetition(node.getPos(), entry.bestMove, node.getRepetitionMap()) && entry.depth >= node.getRemainingDepth()) {
+
+					auto& legalMoves = node.getPositionData().legalMoves;
+					bool validMove = std::ranges::contains(legalMoves, pvMove) && //todo: make this fast
+						!wouldMakeRepetition(node.getPos(), entry.bestMove, node.getRepetitionMap()) &&
+						entry.depth >= node.getRemainingDepth();
+
+					if (validMove) {
 						switch (entry.bound) {
 						case InWindow:
 							return { entry.bestMove, entry.rating, false };
@@ -176,6 +183,8 @@ namespace chess {
 
 		template<bool Maximizing>
 		MoveRating bestChildPosition(const Node& node, const Move& pvMove, AlphaBeta alphaBeta) {
+			ZoneScoped;
+
 			auto originalAlphaBeta = alphaBeta;
 
 			auto& killerMoves = m_killerMoves[node.getLevel().get()];
@@ -247,7 +256,7 @@ namespace chess {
 			}
 
 			if (!bestRating.invalidTTEntry) {
-				PositionEntry newEntry{ bestRating.move, bestRating.rating, node.getRemainingDepth(), bound };
+				TTEntry newEntry{ bestRating.move, node.getRemainingDepth(), bound, bestRating.rating };
 				storePositionEntry(node.getPos(), newEntry);
 			}
 
@@ -256,7 +265,7 @@ namespace chess {
 		}
 
 		template<bool Maximizing>
-		MoveRating startAlphaBetaSearch(const Position& pos, SafeUnsigned<std::uint8_t> depth, RepetitionMap repetitionMap) {
+		MoveRating startAlphaBetaSearch(const Position& pos, SafeInt<std::uint8_t> depth, RepetitionMap repetitionMap) {
 			AlphaBeta alphaBeta;
 			Node root{ pos, depth, repetitionMap };
 			return tryShortCircuit<Maximizing>(root, alphaBeta);
@@ -265,10 +274,8 @@ namespace chess {
 		template<bool Maximizing>
 		MoveRating iterativeDeepening(const Position& pos, const RepetitionMap& repetitionMap) {
 			for (auto iterDepth = 1_su8; iterDepth < depth; ++iterDepth) {
-				arena::resetThread();
 				startAlphaBetaSearch<Maximizing>(pos, iterDepth, repetitionMap);
 			}
-			arena::resetThread();
 			return startAlphaBetaSearch<Maximizing>(pos, depth, repetitionMap);
 		}
 	public:
@@ -297,23 +304,16 @@ namespace chess {
 					searchers.emplace_back(true, &stopRequested);
 				}
 			}
-
-			//register threads (only one of these objects exists for the lifetime of the program, so no duplicate registration)
-			auto threadIDs = pool.get_thread_ids();
-			for (auto threadID : threadIDs) {
-				arena::registerThread(threadID);
-			}
-			arena::registerThread(std::this_thread::get_id());
 		}
 
-		void assignDepths(SafeUnsigned<std::uint8_t> maxDepth) {
+		void assignDepths(SafeInt<std::uint8_t> maxDepth) {
 			zAssert(maxDepth >= 1_su8);
 			
 			for (auto&& [i, searcher] : std::views::enumerate(searchers)) {
 				if (!searcher.isHelper()) {
 					searcher.depth = maxDepth;
 				} else {
-					auto d = (SafeUnsigned{ static_cast<std::uint8_t>(i) } % 2_su8) == 0_su8 ? 1_su8 : 0_su8;
+					auto d = (SafeInt{ static_cast<std::uint8_t>(i) } % 2_su8) == 0_su8 ? 1_su8 : 0_su8;
 					auto depth = maxDepth == 1_su8 ? maxDepth : maxDepth - d;
 					searcher.depth = depth;
 				}
@@ -326,7 +326,7 @@ namespace chess {
 	{
 	}
 
-	Move voteForBestMove(const std::vector<Searcher>& searchers, const std::vector<MoveRating>& moves) {
+	SearchResult voteForBestMove(const std::vector<Searcher>& searchers, const std::vector<MoveRating>& moves) {
 		auto anyPathsLeadToCheckmate = std::ranges::any_of(moves, [](const MoveRating& m) {
 			return m.checkmateLevel.has_value();
 		});
@@ -337,7 +337,7 @@ namespace chess {
 				}
 				return *mr.checkmateLevel;
 			});
-			return quickestCheckmate->move;
+			return { quickestCheckmate->move, quickestCheckmate->rating };
 		}
 
 		auto [worstIt, bestIt] = std::ranges::minmax_element(moves, std::less{}, [](const MoveRating& mr) {
@@ -351,10 +351,8 @@ namespace chess {
 		auto bestVoteRating = 0_rt;
 
 		for (const auto& [moveRating, searcher] : std::views::zip(moves, searchers)) {
-			if (moveRating.checkmateLevel) {
-				debugPrint(std::format("Thread found checkmate in {} moves", static_cast<std::uint32_t>(moveRating.checkmateLevel->get())));
-			}
 			auto& voteRating = moveRatings[moveRating.move];
+			std::println("Searcher thinks {} is {}", moveRating.move.getUCIString(), moveRating.rating.get());
 			voteRating += searcher.getVotingWeight(moveRating, worstScore, maxScoreDiff);
 			if (voteRating > bestVoteRating) {
 				bestVoteRating = voteRating;
@@ -362,12 +360,10 @@ namespace chess {
 			}
 		}
 
-		return bestMove;
+		return { bestMove, bestVoteRating };
 	} 
 
-	std::optional<Move> findBestMoveImpl(std::shared_ptr<AsyncSearchState> state, Position pos, SafeUnsigned<std::uint8_t> depth, RepetitionMap repetitionMap) {
-		arena::resetAllThreads();
-
+	SearchResult findBestMoveImpl(std::shared_ptr<AsyncSearchState> state, Position pos, SafeInt<std::uint8_t> depth, RepetitionMap repetitionMap) {
 		state->assignDepths(depth);
 		state->stopRequested.store(false);
 
@@ -378,19 +374,26 @@ namespace chess {
 		auto moveCandidates = moveCandidateFutures.get();
 		zAssert(!moveCandidates.empty());
 
+		if (state->stopRequested.load()) {
+			return SearchResult{};
+		}
+
 		//move candidates could contain null moves if a stop was requested, or if there is checkmate
 		auto hasNullMove = std::ranges::any_of(moveCandidates, [](const MoveRating& mr) {
 			return mr.move == Move::null();
 		});
 		if (hasNullMove) {
-			return std::nullopt;
+			return SearchResult{};
 		}
 
 		return voteForBestMove(state->searchers, moveCandidates);
 	}
 
-	std::optional<Move> AsyncSearch::findBestMove(const Position& pos, SafeUnsigned<std::uint8_t> depth, const RepetitionMap& repetitionMap) {
+	SearchResult AsyncSearch::findBestMove(const Position& pos, SafeInt<std::uint8_t> depth, const RepetitionMap& repetitionMap) {
 		ZoneScoped;
+
+		updateTTAge();
+
 		return findBestMoveImpl(m_state, pos, depth, repetitionMap);
 	}
 

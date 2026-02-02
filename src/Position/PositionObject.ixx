@@ -33,6 +33,13 @@ export namespace chess {
 			bool isWhite = true;
 			Bitboard allyPawnRank = 0;
 			Bitboard jumpedAllyPawnRank = 0;
+
+			operator TurnData<const PieceState>() const {
+				return {
+					allies, enemies, allyKingside, allyQueenside, enemyKingside, enemyQueenside,
+					isWhite, allyPawnRank, jumpedAllyPawnRank
+				};
+			}
 		};
 	public:
 		using MutableTurnData = TurnData<PieceState>;
@@ -114,6 +121,16 @@ export namespace chess {
 			auto blackPieces = black.calcAllLocations();
 			return std::popcount(whitePieces) + std::popcount(blackPieces);
 		}
+
+		auto& getAllies(this auto&& self) {
+			return self.m_isWhiteMoving ? self.m_whitePieces : self.m_blackPieces;
+		}
+		auto& getEnemies(this auto&& self) {
+			return self.m_isWhiteMoving ? self.m_blackPieces : self.m_whitePieces;
+		}
+
+		bool setEnPassant(Move& move, const ImmutableTurnData& turnData) const;
+		bool setEnPassant(Move& move) const;
 	};
 
 	struct PositionHasher {
@@ -123,7 +140,7 @@ export namespace chess {
 	};
 	struct PositionComp {
 		bool operator()(const Position& p1, const Position& p2) const {
-			return p1.hash() == p2.hash(); //possibility of a hash duplicate is insanely unlikely 
+			return p1.hash() == p2.hash(); //possibility of a key duplicate is insanely unlikely 
 		}
 	};
 }

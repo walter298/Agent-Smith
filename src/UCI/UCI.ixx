@@ -5,5 +5,5 @@ import std;
 export import Chess.SafeInt;
 
 namespace chess {
-	export void playUCI(SafeUnsigned<std::uint8_t> depth);
+	export void playUCI(SafeInt<std::uint8_t> depth);
 }

@@ -1,0 +1,5 @@
+Cache hit count: 114580
+Cache miss count: 303222
+Cache miss percentage: 0.725755
+Read count: 417802
+Read percentage: 0.5

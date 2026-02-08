@@ -11,6 +11,7 @@ module;
 module Chess.MoveSearch:TranspositionTable;
 
 import Chess.Assert;
+import Chess.EnvironmentVariable;
 import Chess.Square;
 import :MoveHasher;
 
@@ -80,6 +81,12 @@ namespace chess {
 		}
 	};
 
+	struct EntryBucket {
+		static constexpr SafeInt<std::uint8_t> ENTRY_COUNT{ 4 };
+		std::array<PackedTTEntry, static_cast<size_t>(ENTRY_COUNT.get())> array;
+		std::atomic<std::uint8_t> insertIndex = 0;
+	};
+	
 	size_t availableMemory() {
 		MEMORYSTATUSEX status;
 		status.dwLength = sizeof(status);
@@ -90,13 +97,14 @@ namespace chess {
 	class TranspositionTable {
 	private:
 		size_t m_entryCount = 0;
-		std::unique_ptr<PackedTTEntry[]> m_entries;
+		std::unique_ptr<EntryBucket[]> m_entries;
 		SafeInt<std::uint8_t> m_age{ 0 };
+		std::atomic_int m_cacheMissCount = 0;
+		std::atomic_int m_cacheHitCount = 0;
+		std::atomic_int m_readCount = 0;
 	public:
 		TranspositionTable() {
-			constexpr auto MAX_TT_SIZE_BYTES = 3'500'000'000uz; //todo: make this customizable 
-
-			auto backoffFactor = 0.2;
+			auto backoffFactor = 0.8;
 			auto allocationsFailed = 0;
 			constexpr auto MAX_FAILED_ALLOCATIONS = 5;
 
@@ -107,52 +115,88 @@ namespace chess {
 				}
 				try {
 					auto availableRamBytes = static_cast<size_t>(static_cast<double>(availableMemory()) * backoffFactor);
-					availableRamBytes = std::min(availableRamBytes, MAX_TT_SIZE_BYTES);
-					auto maxEntries = availableRamBytes / sizeof(PackedTTEntry);
-					m_entries = std::make_unique<PackedTTEntry[]>(maxEntries);
+					availableRamBytes = std::bit_floor(availableRamBytes);
+					auto maxEntries = availableRamBytes / sizeof(EntryBucket);
+					m_entries = std::make_unique<EntryBucket[]>(maxEntries); //could fail
 					m_entryCount = maxEntries;
 					break;
 				} catch (const std::bad_alloc&) {
-					std::println("More than 25% of last checked available ram was taken! Retrying transposition table allocation");
+					std::println("More than {}% of last checked available ram was taken! Retrying transposition table allocation", backoffFactor);
 					backoffFactor *= 0.8; //ask for 20% less memory next time
 					allocationsFailed++;
 				}
 			}
+
+			reset();
 		}
 
-		std::optional<TTEntry> operator[](const Position& pos) const {
-			auto hashIndex = pos.hash() % m_entryCount;
-			auto& entry = m_entries[hashIndex];
+		void flushData() const {
+			std::ofstream file{ getAssetDirectoryPath() / "transposition_table_data.txt" };
+			zAssert(file.is_open());
+			auto hitCount = m_cacheHitCount.load();
+			auto missCount = m_cacheMissCount.load();
+			auto readCount = m_readCount.load();
+			file << "Cache hit count: " << hitCount << '\n';
+			file << "Cache miss count: " << missCount << '\n';
+			file << "Cache miss percentage: " << static_cast<double>(missCount) / static_cast<double>(missCount + hitCount) << '\n';
+			file << "Read count: " << readCount << '\n';
+			file << "Read percentage: " << static_cast<double>(readCount) / static_cast<double>(missCount + hitCount + readCount) << '\n';
+		}
 
-			auto tempKey = entry.key.load();
-			auto tempData = entry.data.load();
-			
-			if ((tempKey ^ tempData) == pos.hash()) { //insane operator precedence rules
-				return PackedTTEntry::unpack(pos, tempData);
+		std::optional<TTEntry> operator[](const Position& pos) {
+			++m_readCount;
+
+			auto hashIndex = pos.hash() & (m_entryCount - 1);
+			auto& bucket = m_entries[hashIndex];
+
+			for (const auto& entry : bucket.array) {
+				auto tempKey = entry.key.load();
+				auto tempData = entry.data.load();
+				if ((tempKey ^ tempData) == pos.hash()) { //insane operator precedence rules
+					++m_cacheHitCount;
+					return PackedTTEntry::unpack(pos, tempData);
+				}
 			}
+			
+			++m_cacheMissCount;
 			return std::nullopt;
 		}
 
 		void insert(const Position& pos, TTEntry entry) {
 			entry.age = m_age;
-			auto index = pos.hash() % m_entryCount;
-			auto& existingEntry = m_entries[index];
+			auto index = pos.hash() & (m_entryCount - 1);
+			auto& bucket = m_entries[index];
 
-			auto data = existingEntry.data.load();
-			auto existingDepth = PackedTTEntry::getDepth(data);
+			SafeInt entryIndex{ bucket.insertIndex.load() };
 
-			if (PackedTTEntry::getAge(data) != m_age) {
-				existingEntry.reassign(entry, pos.hash()); //store new entry if this is a newer search
-			} else if (existingDepth <= entry.depth) { //age is the same, positions may be different
-				existingEntry.reassign(entry, pos.hash());
+			for (auto i = 0_su8; i < EntryBucket::ENTRY_COUNT; ++i) {
+				auto& packedEntry = bucket.array[static_cast<size_t>(entryIndex.get())];
+				auto data = packedEntry.data.load();
+				auto existingDepth = PackedTTEntry::getDepth(data);
+
+				if (PackedTTEntry::getAge(data) != m_age) {
+					packedEntry.reassign(entry, pos.hash()); //store new entry if this is a newer search
+					break;
+				}
+				if (existingDepth < entry.depth) { //age is the same, positions may be different
+					packedEntry.reassign(entry, pos.hash());
+					break;
+				}
+
+				entryIndex.incMod(EntryBucket::ENTRY_COUNT);
 			}
+
+			bucket.insertIndex.store(entryIndex.get());
 		}
 
 		void reset() {
 			m_age = 0_su8;
 
-			std::span entryRange{ m_entries.get(), m_entries.get() + m_entryCount };
-			for (auto& entry : entryRange) {
+			std::span span{ m_entries.get(), m_entries.get() + m_entryCount };
+			auto bucketView = span | std::views::transform([](auto& bucket) -> auto& {
+				return bucket.array;
+			});
+			for (auto& entry : std::views::join(bucketView)) {
 				entry.key.store(0);
 				entry.data.store(0);
 			}
@@ -172,10 +216,10 @@ namespace chess {
 		return table;
 	}
 
-	std::optional<TTEntry> getPositionEntry(const Position& pos, SafeInt<std::uint8_t> depth) {
+	std::optional<TTEntry> getPositionEntry(const Position& pos) {
 		ZoneScoped;
 
-		const auto& table = getTT();
+		auto& table = getTT();
 		auto entry = table[pos];
 		if (entry) {
 			return *entry;
@@ -192,6 +236,10 @@ namespace chess {
 
 	void updateTTAge() {
 		getTT().updateAge();
+	}
+
+	void flushTranspositionTableData() {
+		getTT().flushData();
 	}
 
 	void resetTranspositionTable() { 

@@ -96,6 +96,9 @@ namespace chess {
             } else if (move.from == turnData.allyQueenside.rookFrom) {
                 turnData.allies.castling.disallowQueensideCastling();
             }
+        } else if (move.movedPiece == King) {
+            turnData.allies.castling.disallowKingsideCastling();
+            turnData.allies.castling.disallowQueensideCastling();
         }
 
         //move the piece (destination square handled with pawn promotions)

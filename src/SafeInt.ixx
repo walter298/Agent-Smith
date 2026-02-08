@@ -167,7 +167,7 @@ namespace chess {
 			return SafeInt{ static_cast<T>(~m_value) };
 		}
 
-		void subToMin(SafeInt subbed, SafeInt min) {
+		constexpr void subToMin(SafeInt subbed, SafeInt min) {
 			zAssert(min <= *this && subbed.m_value >= 0);
 			if (!isValidSubtraction(*this, subbed)) {
 				m_value = min.get();
@@ -177,8 +177,15 @@ namespace chess {
 			}
 		}
 
-		void incMod() requires(std::unsigned_integral<T>) {
+		constexpr void incMod() requires(std::unsigned_integral<T>) {
 			++m_value;
+		}
+		constexpr void incMod(SafeInt cutoff) requires(std::unsigned_integral<T>) {
+			if (static_cast<T>(m_value + 1) == cutoff.m_value) {
+				m_value = 0;
+			} else {
+				++m_value;
+			}
 		}
 
 		constexpr friend SafeInt operator+(SafeInt a, SafeInt b) {

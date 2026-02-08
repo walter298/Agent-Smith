@@ -22,9 +22,10 @@ namespace chess {
 		SafeInt<std::uint8_t> age;
 	};
 	
-	std::optional<TTEntry> getPositionEntry(const Position& pos, SafeInt<std::uint8_t> depth);
+	std::optional<TTEntry> getPositionEntry(const Position& pos);
 	void storePositionEntry(const Position& pos, const TTEntry& entry);
 
 	void updateTTAge();
+	export void flushTranspositionTableData();
 	export void resetTranspositionTable();
 }

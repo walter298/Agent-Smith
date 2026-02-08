@@ -56,6 +56,9 @@ namespace chess {
 					std::fflush(stdout);
 				}
 				engineState->signal.signalSearchEnd();
+
+				flushTranspositionTableData();
+
 				break;
 			}
 		}

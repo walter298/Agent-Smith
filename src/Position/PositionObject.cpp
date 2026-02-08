@@ -11,7 +11,7 @@ import :Parse;
 import :Zobrist;
 
 namespace chess {
-    void Position::setPos(const PositionCommand& positionCommand) {
+    void Position::setPos(const PositionCommandParseResult& positionCommand) {
         m_whitePieces.clear();
         m_blackPieces.clear();
 
@@ -114,6 +114,23 @@ namespace chess {
             addSquare(movedPiecePos, move.to);
             m_zobristHash ^= getZobristPieceCode(move.to, move.movedPiece, m_isWhiteMoving);
         }
+    }
+
+
+    void Position::verify() const {
+        auto [white, black] = getColorSides();
+
+        auto verifyPieceCounts = [](const PieceState& pieces) {
+            zAssert(std::popcount(pieces[King]) == 1);
+            zAssert(std::popcount(pieces[Pawn]) < 9);
+            zAssert(std::popcount(pieces[Knight]) < 11);
+            zAssert(std::popcount(pieces[Rook]) < 11);
+            zAssert(std::popcount(pieces[Bishop]) < 11);
+            zAssert(std::popcount(pieces[Queen]) < 11);
+            zAssert(std::popcount(pieces.calcAllLocations()) < 17);
+        };
+        verifyPieceCounts(white);
+        verifyPieceCounts(black);
     }
 
     void Position::move(const Move& move) {

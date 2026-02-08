@@ -39,15 +39,21 @@ import Chess.MoveGeneration;
 import Chess.MoveSearch;
 import Chess.Position.RepetitionMap;
 import Chess.SafeInt;
+import Chess.UCI.UciCommand;
+import Chess.UCI.Signal;
 
 import :Pipe;
 
 namespace chess {
 	namespace tests {
-		AsyncSearch& getSearchFunction() {
-			static AsyncSearch search;
-			return search;
+		using namespace std::literals;
+
+		SearchPoolHandle& getThreadPool() {
+			static Signal signal;
+			static auto pool = makeSearchPool(&signal);
+			return pool;
 		}
+
 		//illegal move!
 		//2025-10-26 00:28:26.320-->1:position startpos moves e2e4 a7a5 d2d4 d7d5 e4d5 d8d5 c2c4
 
@@ -233,19 +239,20 @@ namespace chess {
 		}
 
 		void testThatLegalMovesExist4() {
-			Position pos;
-			pos.setPos(parsePositionCommand("startpos"));
-			RepetitionMap rMap;
+			PositionCommand posCommand;
+			posCommand.pos.setPos(parsePositionCommand("startpos"));
+			GoCommand goCommand{ 6_su8, 100s, 100s };
 
 			std::string moves;
 			for (int i = 0; i < 20; i++) {
-				auto [bestMove, _] = getSearchFunction().findBestMove(pos, 6_su8, rMap);
+				auto bestMove = getThreadPool()(posCommand, goCommand);
 				if (bestMove == Move::null()) {
 					std::println("POTENTIAL Error: no best move found in testThatLegalMovesExist4 at ply {}!", i + 1);
 					std::println("Moves: {}", moves);
 					return;
 				}
-				pos.move(bestMove);
+				posCommand.pos.move(bestMove);
+				posCommand.repetitionMap.push(posCommand.pos);
 				moves += bestMove.getUCIString() + " ";
 			}
 		}
@@ -456,32 +463,28 @@ namespace chess {
 		}
 
 		void testRepetition2() {
-			RepetitionMap rMap;
-			Position pos;
-			pos.setPos(parsePositionCommand("startpos"));
-			rMap.push(pos);
-			assert_equality(rMap.getTotalPositionCount(), 1);
+			PositionCommand posCommand{ parsePositionCommand("startpos") };
+			GoCommand goCommand{ 6_su8, 50ms, 50ms, false };
+			assert_equality(posCommand.repetitionMap.getTotalPositionCount(), 1);
 
 			//has side effect of storing positions in the repetition table, but positions should be popped
-			getSearchFunction().findBestMove(pos, 6_su8, rMap);
-			assert_equality(rMap.getTotalPositionCount(), 1);
+			getThreadPool()(posCommand, goCommand);
+			assert_equality(posCommand.repetitionMap.getTotalPositionCount(), 1);
 		}
 
 		void testCheckmate() {
-			Position pos;
-			pos.setPos(parsePositionCommand("fen rn2kbnr/p3ppp1/1p4p1/2p5/8/2NPBq1b/PPP2P1P/R4RK1 b kq - 0 1"));
-			RepetitionMap rMap;
-			rMap.push(pos);
+			resetTranspositionTable();
 
-			auto [bestMove, _] = getSearchFunction().findBestMove(pos, 6_su8, rMap);
+			PositionCommand posCommand{ parsePositionCommand("fen rn2kbnr/p3ppp1/1p4p1/2p5/8/2NPBq1b/PPP2P1P/R4RK1 b kq - 0 1") };
+			GoCommand goCommand{ 6_su8, 50ms, 50ms, false };
+
+			auto bestMove = getThreadPool()(posCommand, goCommand);
 			assert_equality(bestMove.from, Square::F3);
 			assert_equality(bestMove.to, Square::G2);
 		}
 
 		void runAllTests() {
 			std::println("Running tests...");
-
-			getSearchFunction(); //registers thread
 
 			testStartPos();
 			testPawnLocations();

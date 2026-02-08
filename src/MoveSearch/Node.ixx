@@ -44,6 +44,8 @@ export namespace chess {
 			m_level = parent.m_level + 1_su8;
 			m_materialSignSwap *= -1_rt;
 			m_levelsToSearch = movePriority.getDepth();
+			parent.getPos().verify();
+			m_pos.verify();
 		}
 
 		~Node() {

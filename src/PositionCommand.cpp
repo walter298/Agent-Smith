@@ -3,8 +3,8 @@ module Chess.PositionCommand;
 import Chess.Assert;
 
 namespace chess {
-	PositionCommand parsePositionCommand(const std::string& fenStr) {
-		PositionCommand ret;
+	PositionCommandParseResult parsePositionCommand(const std::string& fenStr) {
+		PositionCommandParseResult ret;
 
 		std::istringstream iss{ fenStr };
 

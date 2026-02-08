@@ -1,4 +1,4 @@
-Thread [27228]: 
+Thread [36044]: 
 uci
 id name Agent Smith
 id author Walter Stein-Smith
@@ -6,14 +6,5 @@ uciok
 
 isready
 readyok
-ucinewgame
-isready
-readyok
-position startpos moves e2e4
-go wtime 4800000 btime 4800000 winc 0 binc 0
-position startpos moves e2e4 b8c6 d2d4
-go wtime 4797984 btime 4792614 winc 0 binc 0
-position startpos moves e2e4 b8c6 d2d4 c6b8 c2c4
-go wtime 4795453 btime 4769479 winc 0 binc 0
 quit
 

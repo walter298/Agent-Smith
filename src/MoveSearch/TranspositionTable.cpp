@@ -150,6 +150,12 @@ namespace chess {
 
 		void reset() {
 			m_age = 0_su8;
+
+			std::span entryRange{ m_entries.get(), m_entries.get() + m_entryCount };
+			for (auto& entry : entryRange) {
+				entry.key.store(0);
+				entry.data.store(0);
+			}
 		}
 
 		void updateAge() {
@@ -171,7 +177,7 @@ namespace chess {
 
 		const auto& table = getTT();
 		auto entry = table[pos];
-		if (entry && entry->depth >= depth) {
+		if (entry) {
 			return *entry;
 		}
 		return std::nullopt;

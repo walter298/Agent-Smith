@@ -2,7 +2,7 @@ module;
 
 #include <tracy/Tracy.hpp>
 
-module Chess.MoveSearch;
+module Chess.MoveSearch:SearchPool;
 
 import std;
 import BS.thread_pool;
@@ -62,14 +62,14 @@ namespace chess {
 		std::optional<SafeInt<std::uint8_t>> checkmateLevel = std::nullopt;
 	};
 
-	class Searcher {
+	class SearchThread {
 	private:
 		static constexpr SafeInt<std::uint8_t> RANDOMIZATION_CUTOFF{ 3 }; //todo: make this a fraction of the max depth 
 		std::mt19937 m_urbg;
 		bool m_helper = false;
-		const std::atomic_bool* m_stopRequested;
+		const Signal* m_stopSignal;
 
-		static constexpr auto MAX_DEPTH = 30uz;
+		static constexpr auto MAX_DEPTH = 50uz;
 		static constexpr auto MAX_KILLER_MOVES = 3uz;
 		struct KillerMoveEntries {
 			std::array<Move, MAX_KILLER_MOVES> killerMoves{};
@@ -77,16 +77,16 @@ namespace chess {
 		};
 		std::array<KillerMoveEntries, MAX_DEPTH> m_killerMoves{};
 	public:
-		SafeInt<std::uint8_t> depth = 0_su8;
-
-		Searcher(bool helper, const std::atomic_bool* stopRequested)
-			: m_urbg{ std::random_device{}() }, m_helper{ helper }, m_stopRequested{ stopRequested }
+		SearchThread(bool helper, const Signal* stopRequested)
+			: m_urbg{ std::random_device{}() }, m_helper{ helper }, m_stopSignal{ stopRequested }
 		{
 			for (auto& killerMoves : m_killerMoves) {
 				std::ranges::fill(killerMoves.killerMoves, Move::null());
 				killerMoves.index = 0;
 			}
 		}
+
+		SafeInt<std::uint8_t> depth = 0_su8;
 
 		Rating getVotingWeight(const MoveRating& moveRating, Rating& worstScore, Rating maxScoreDiff) const {
 			zAssert(maxScoreDiff >= 0_rt);
@@ -136,13 +136,13 @@ namespace chess {
 
 			auto pvMove = Move::null();
 
-			if (m_stopRequested->load()) {
+			if (m_stopSignal->isStopRequested()) {
 				return { Move::null(), node.getRating(), true };
 			}
 
 			bool canUseEntry = !(m_helper && node.getLevel() == 0_su8);
 
-			if (!m_stopRequested->load() && canUseEntry) {
+			if (!m_stopSignal->isStopRequested() && canUseEntry) {
 				if (auto entryRes = getPositionEntry(node.getPos(), node.getRemainingDepth())) {
 					const auto& entry = *entryRes;
 					pvMove = entry.bestMove;
@@ -187,7 +187,9 @@ namespace chess {
 
 			auto originalAlphaBeta = alphaBeta;
 
-			auto& killerMoves = m_killerMoves[node.getLevel().get()];
+			auto killerMoveIndex = std::min(node.getLevel().get(), static_cast<std::uint8_t>(MAX_DEPTH - 1));
+			auto& killerMoves = m_killerMoves[killerMoveIndex];
+			
 			auto movePriorities = getMovePriorities(node, pvMove, std::span{ killerMoves.killerMoves.data(), MAX_KILLER_MOVES });;
 			if (m_helper && node.getLevel() < RANDOMIZATION_CUTOFF) {
 				std::ranges::shuffle(movePriorities, m_urbg);
@@ -274,130 +276,132 @@ namespace chess {
 		template<bool Maximizing>
 		MoveRating iterativeDeepening(const Position& pos, const RepetitionMap& repetitionMap) {
 			for (auto iterDepth = 1_su8; iterDepth < depth; ++iterDepth) {
+				pos.verify();
 				startAlphaBetaSearch<Maximizing>(pos, iterDepth, repetitionMap);
 			}
 			return startAlphaBetaSearch<Maximizing>(pos, depth, repetitionMap);
 		}
 	public:
-		MoveRating operator()(const Position& pos, const RepetitionMap& repetitionMap) {
-			if (pos.isWhite()) {
-				return iterativeDeepening<true>(pos, repetitionMap);
+		MoveRating findBestMove(PositionCommand posCommand) {
+			posCommand.pos.verify();
+			if (posCommand.pos.isWhite()) {
+				return iterativeDeepening<true>(posCommand.pos, posCommand.repetitionMap);
 			} else {
-				return iterativeDeepening<false>(pos, repetitionMap);
+				return iterativeDeepening<false>(posCommand.pos, posCommand.repetitionMap);
 			}
 		}
 	};
 
-	const auto THREAD_COUNT = std::thread::hardware_concurrency();
-	constexpr auto MAIN_THREAD_INDEX = 0uz;
-
-	struct AsyncSearchState {
-		BS::thread_pool<> pool{ THREAD_COUNT };
-		std::atomic_bool stopRequested = false;
-		std::vector<Searcher> searchers;
-
-		AsyncSearchState() {
-			searchers.reserve(THREAD_COUNT);
-			searchers.emplace_back(false, &stopRequested); //insert main thread
-			if (THREAD_COUNT > 1) {
-				for (auto i = 0uz; i < THREAD_COUNT - 1; i++) { //insert helper threads
-					searchers.emplace_back(true, &stopRequested);
-				}
-			}
-		}
+	class SearchPool {
+	private:
+		std::vector<std::unique_ptr<SearchThread>> m_threads;
+		BS::thread_pool<> m_pool;
+		Signal* m_signal = nullptr;
 
 		void assignDepths(SafeInt<std::uint8_t> maxDepth) {
 			zAssert(maxDepth >= 1_su8);
-			
-			for (auto&& [i, searcher] : std::views::enumerate(searchers)) {
-				if (!searcher.isHelper()) {
-					searcher.depth = maxDepth;
-				} else {
+
+			for (auto&& [i, searcher] : std::views::enumerate(m_threads)) {
+				if (!searcher->isHelper()) {
+					searcher->depth = maxDepth;
+				}
+				else {
 					auto d = (SafeInt{ static_cast<std::uint8_t>(i) } % 2_su8) == 0_su8 ? 1_su8 : 0_su8;
 					auto depth = maxDepth == 1_su8 ? maxDepth : maxDepth - d;
-					searcher.depth = depth;
+					searcher->depth = depth;
 				}
 			}
+		}
+
+		Move voteForBestMove(const std::vector<MoveRating>& moves) {
+			auto anyPathsLeadToCheckmate = std::ranges::any_of(moves, [](const MoveRating& m) {
+				return m.checkmateLevel.has_value();
+			});
+			if (anyPathsLeadToCheckmate) {
+				auto quickestCheckmate = std::ranges::min_element(moves, std::less{}, [](const MoveRating& mr) {
+					if (!mr.checkmateLevel) {
+						return 255_su8;
+					}
+					return *mr.checkmateLevel;
+				});
+				return quickestCheckmate->move;
+			}
+
+			auto [worstIt, bestIt] = std::ranges::minmax_element(moves, std::less{}, [](const MoveRating& mr) {
+				return mr.rating;
+			});
+			auto worstScore = worstIt->rating;
+			auto maxScoreDiff = bestIt->rating - worstScore;
+
+			std::unordered_map<Move, Rating, MoveHasher> moveRatings;
+			auto bestMove = Move::null();
+			auto bestVoteRating = 0_rt;
+
+			for (const auto& [moveRating, searcher] : std::views::zip(moves, m_threads)) {
+				auto& voteRating = moveRatings[moveRating.move];
+				std::println("SearchThread thinks {} is {}", moveRating.move.getUCIString(), moveRating.rating.get());
+				voteRating += searcher->getVotingWeight(moveRating, worstScore, maxScoreDiff);
+				if (voteRating > bestVoteRating) {
+					bestVoteRating = voteRating;
+					bestMove = moveRating.move;
+				}
+			}
+
+			return bestMove;
+		}
+	public:
+		explicit SearchPool(Signal* signal) : m_signal{ signal } {
+			const auto THREAD_COUNT = std::thread::hardware_concurrency();
+		
+			m_threads.reserve(THREAD_COUNT);
+			m_threads.emplace_back(std::make_unique<SearchThread>(false, m_signal)); //insert main thread
+			if (THREAD_COUNT > 1) {
+				for (auto i = 0uz; i < THREAD_COUNT - 1; i++) { //insert helper threads
+					m_threads.emplace_back(std::make_unique<SearchThread>(true, m_signal));
+				}
+			}
+		}
+
+		Move operator()(const PositionCommand& posCommand, const GoCommand& goCommand) {
+			posCommand.pos.verify();
+
+			updateTTAge();
+
+			std::println("Depth: {}", static_cast<std::uint32_t>(goCommand.depth.get()));
+			assignDepths(goCommand.depth);
+
+			//IMPORTANT: DO NOT pass by reference into lambda because we'll get shared repetition map
+			auto moveCandidateFutures = m_pool.submit_sequence(0uz, m_threads.size(), [posCommand, this](size_t i) {
+				return m_threads[i]->findBestMove(posCommand);
+			});
+
+			auto moveCandidates = moveCandidateFutures.get();
+			zAssert(!moveCandidates.empty());
+
+			if (m_signal->isStopRequested()) {
+				m_signal->signalSearchEnd();
+				return Move::null();
+			}
+
+			//move candidates could contain null moves if a stop was requested, or if there is checkmate
+			auto hasNullMove = std::ranges::any_of(moveCandidates, [](const MoveRating& mr) {
+				return mr.move == Move::null();
+			});
+			if (hasNullMove) {
+				zAssert(std::ranges::all_of(moveCandidates, [](const MoveRating& mr) {
+					return mr.move == Move::null();
+				}));
+				return Move::null();
+			}
+
+			return voteForBestMove(moveCandidates);
 		}
 	};
 
-	AsyncSearch::AsyncSearch()
-		: m_state{ std::make_shared<AsyncSearchState>() }
-	{
-	}
-
-	SearchResult voteForBestMove(const std::vector<Searcher>& searchers, const std::vector<MoveRating>& moves) {
-		auto anyPathsLeadToCheckmate = std::ranges::any_of(moves, [](const MoveRating& m) {
-			return m.checkmateLevel.has_value();
-		});
-		if (anyPathsLeadToCheckmate) {
-			auto quickestCheckmate = std::ranges::min_element(moves, std::less{}, [](const MoveRating& mr) {
-				if (!mr.checkmateLevel) {
-					return 255_su8;
-				}
-				return *mr.checkmateLevel;
-			});
-			return { quickestCheckmate->move, quickestCheckmate->rating };
-		}
-
-		auto [worstIt, bestIt] = std::ranges::minmax_element(moves, std::less{}, [](const MoveRating& mr) {
-			return mr.rating;
-		});
-		auto worstScore = worstIt->rating;
-		auto maxScoreDiff = bestIt->rating - worstScore;
-
-		std::unordered_map<Move, Rating, MoveHasher> moveRatings;
-		auto bestMove = Move::null();
-		auto bestVoteRating = 0_rt;
-
-		for (const auto& [moveRating, searcher] : std::views::zip(moves, searchers)) {
-			auto& voteRating = moveRatings[moveRating.move];
-			std::println("Searcher thinks {} is {}", moveRating.move.getUCIString(), moveRating.rating.get());
-			voteRating += searcher.getVotingWeight(moveRating, worstScore, maxScoreDiff);
-			if (voteRating > bestVoteRating) {
-				bestVoteRating = voteRating;
-				bestMove = moveRating.move;
-			}
-		}
-
-		return { bestMove, bestVoteRating };
-	} 
-
-	SearchResult findBestMoveImpl(std::shared_ptr<AsyncSearchState> state, Position pos, SafeInt<std::uint8_t> depth, RepetitionMap repetitionMap) {
-		state->assignDepths(depth);
-		state->stopRequested.store(false);
-
-		auto moveCandidateFutures = state->pool.submit_sequence(0uz, state->searchers.size(), [&](size_t i) {
-			return state->searchers[i](pos, repetitionMap);
-		});
-		
-		auto moveCandidates = moveCandidateFutures.get();
-		zAssert(!moveCandidates.empty());
-
-		if (state->stopRequested.load()) {
-			return SearchResult{};
-		}
-
-		//move candidates could contain null moves if a stop was requested, or if there is checkmate
-		auto hasNullMove = std::ranges::any_of(moveCandidates, [](const MoveRating& mr) {
-			return mr.move == Move::null();
-		});
-		if (hasNullMove) {
-			return SearchResult{};
-		}
-
-		return voteForBestMove(state->searchers, moveCandidates);
-	}
-
-	SearchResult AsyncSearch::findBestMove(const Position& pos, SafeInt<std::uint8_t> depth, const RepetitionMap& repetitionMap) {
-		ZoneScoped;
-
-		updateTTAge();
-
-		return findBestMoveImpl(m_state, pos, depth, repetitionMap);
-	}
-
-	void AsyncSearch::cancel() {
-		m_state->stopRequested.store(true);
+	SearchPoolHandle makeSearchPool(Signal* signal) {
+		auto func = [searchPool = std::make_unique<SearchPool>(signal)](const auto&... ts) mutable {
+			return (*searchPool)(ts...);
+		};
+		return func;
 	}
 }

@@ -85,7 +85,7 @@ export namespace chess {
 			this->move(move);
 		}
 
-		void setPos(const PositionCommand& positionCommand);
+		void setPos(const PositionCommandParseResult& positionCommand);
 
 		void move(const Move& move);
 		void move(std::string_view moveStr);
@@ -110,6 +110,8 @@ export namespace chess {
 				return std::tie(self.m_blackPieces, self.m_whitePieces);
 			}
 		}
+
+		void verify() const;
 
 		bool isWhite() const {
 			return m_isWhiteMoving;

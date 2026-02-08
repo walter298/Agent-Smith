@@ -28,6 +28,7 @@ namespace chess {
 		}
 
 		constexpr std::uint8_t operator()(Square a, Square b) const {
+			zAssert(a != Square::None && b != Square::None);
 			return m_table[static_cast<std::uint8_t>(a)][static_cast<std::uint8_t>(b)];
 		}
 	};
@@ -70,9 +71,11 @@ namespace chess {
 		auto [white, black] = pos.getColorSides();
 
 		auto whiteKingPos = nextSquare(white[King]);
+		zAssert(whiteKingPos != Square::None);
 		ret -= calcEnemyProximityPenalty(whiteKingPos, black, posData.blackSquares.destSquaresPinConsidered);
 
 		auto blackKingPos = nextSquare(black[King]);
+		zAssert(blackKingPos != Square::None);
 		ret += calcEnemyProximityPenalty(blackKingPos, white, posData.whiteSquares.destSquaresPinConsidered);
 
 		return ret;

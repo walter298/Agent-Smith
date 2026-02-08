@@ -11,6 +11,7 @@ import Chess.Tests;
 import Chess.PositionCommand;
 import Chess.MoveSearch;
 import Chess.Position.RepetitionMap;
+import Chess.UCI.UciCommand;
 
 namespace chess {
 	void handleBitboardInput(const char** argv, int argc) {
@@ -110,20 +111,17 @@ namespace chess {
 
 		std::println("Fen: {}", fen);
 
-		Position pos;
-		pos.setPos(parsePositionCommand(std::format("fen {}", fen)));
-		auto posData = calcPositionData(pos);
+		PositionCommand posCommand{ parsePositionCommand(std::format("fen {}", fen)) };
+		GoCommand goCommand{ depth, 10s, 10s };
 
-		RepetitionMap map;
-		AsyncSearch search;
-		auto [bestMove, rating] = search.findBestMove(pos, depth, map);
-		std::println("{} {}", bestMove.getUCIString(), rating.get());
+		Signal signal;
+		auto searchPool = makeSearchPool(&signal);
+		auto bestMove = searchPool(posCommand, goCommand);
+		std::println("{}", bestMove.getUCIString());
 	}
 }
 
 int main(int argc, const char** argv) {
-	//chess::arena::init();
-
 	if (argc == 1) {
 		constexpr chess::SafeInt<std::uint8_t> DEFAULT_DEPTH{ 8 };
 		chess::playUCI(DEFAULT_DEPTH);

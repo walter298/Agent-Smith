@@ -97,6 +97,13 @@ namespace chess {
 		const auto& posData  = node.getPositionData();
 		auto allEnemySquares = node.getPositionData().allEnemySquares().destSquaresPinConsidered;
 
+		//verify that the allies are not attacking the enemy king 
+		if constexpr (USING_ASSERT) {
+			auto turnData = node.getPos().getTurnData();
+			auto enemyKing = turnData.enemies[King];
+			zAssert((posData.getAllySquares().allDestSquares & enemyKing) == 0);
+		}
+
 		auto remainingDepth = node.getRemainingDepth();
 		StaticVector<MovePriority> priorities{ posData.legalMoves | std::views::transform([&](const Move& move) {
 			return MovePriority{ move, allEnemySquares, remainingDepth };

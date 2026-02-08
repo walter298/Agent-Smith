@@ -11,7 +11,7 @@ import Chess.Evaluation;
 import Chess.Position.RepetitionMap;
 import Chess.PositionCommand;
 
-import :SearchThread;
+import :Producer;
 
 namespace chess {
 	std::string getTokensAfterPosition(std::istringstream& iss) {
@@ -20,31 +20,12 @@ namespace chess {
 		return buff.substr(currentPos);
 	}
 
-	GameState makeGameState(const std::string& commandStr, SafeInt<std::uint8_t> depth) {
-		GameState ret;
-		
-		auto command = parsePositionCommand(commandStr);
-		ret.pos.setPos(command);
-		ret.repetitionMap.push(ret.pos);
-
-		for (const auto& move : command.moves) {
-			ret.pos.move(move);
-			ret.repetitionMap.push(ret.pos);
-		}
-
-		ret.depth = depth;
-
-		return ret;
-	}
-
 	void playUCI(SafeInt<std::uint8_t> depth) {
-		SearchThread searchThread;
+		UciConsumer consumerThread;
 
 		std::istringstream iss;
 		std::string line;
 		std::string token;
-
-		GameState lastGameState;
 
 		while (true) {
 			if (!std::getline(std::cin, line)) {
@@ -63,10 +44,10 @@ namespace chess {
 			if (token == "quit") {
 				break;
 			} else if (token == "position") {
-				lastGameState = makeGameState(getTokensAfterPosition(iss), depth);
-				searchThread.setPosition(lastGameState);
+				PositionCommand posCommand{ parsePositionCommand(getTokensAfterPosition(iss)) };
+				consumerThread(UciCommand::position(posCommand));
 			} else if (token == "ucinewgame") {
-				searchThread.stop();
+				consumerThread(UciCommand::stop());
 			} else if (token == "isready") {
 				debugPrint("readyok");
 				std::printf("readyok\n");
@@ -79,9 +60,11 @@ namespace chess {
 				std::printf(ENGINE_INFO);
 				std::fflush(stdout);
 			} else if (token == "go") {
-				searchThread.go(depth); 
+				std::println("Sending go command...");
+				std::fflush(stdout);
+				consumerThread(UciCommand::go({ depth })); 
 			} else if (token == "stop") {
-				searchThread.stop();
+				consumerThread(UciCommand::stop());
 			}
 		}
 	}

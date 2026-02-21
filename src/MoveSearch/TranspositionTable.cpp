@@ -79,13 +79,12 @@ namespace chess {
 			auto temp = tempData >> DEPTH_POS;
 			return SafeInt{ static_cast<std::uint8_t>(temp) };
 		}
+		static int calcScore(std::uint64_t tempData) {
+			return 1 << getDepth(tempData).get();
+		}
 	};
 
-	struct EntryBucket {
-		static constexpr SafeInt<std::uint8_t> ENTRY_COUNT{ 4 };
-		std::array<PackedTTEntry, static_cast<size_t>(ENTRY_COUNT.get())> array;
-		std::atomic<std::uint8_t> insertIndex = 0;
-	};
+	using EntryBucket = std::array<PackedTTEntry, 3>;
 	
 	size_t availableMemory() {
 		MEMORYSTATUSEX status;
@@ -99,9 +98,9 @@ namespace chess {
 		size_t m_entryCount = 0;
 		std::unique_ptr<EntryBucket[]> m_entries;
 		SafeInt<std::uint8_t> m_age{ 0 };
-		std::atomic_int m_cacheMissCount = 0;
-		std::atomic_int m_cacheHitCount = 0;
-		std::atomic_int m_readCount = 0;
+		//std::atomic_int m_cacheMissCount = 0;
+		//std::atomic_int m_cacheHitCount = 0;
+		//std::atomic_int m_writeCount = 0;
 	public:
 		TranspositionTable() {
 			auto backoffFactor = 0.8;
@@ -115,8 +114,7 @@ namespace chess {
 				}
 				try {
 					auto availableRamBytes = static_cast<size_t>(static_cast<double>(availableMemory()) * backoffFactor);
-					availableRamBytes = std::bit_floor(availableRamBytes);
-					auto maxEntries = availableRamBytes / sizeof(EntryBucket);
+					auto maxEntries = std::bit_floor(availableRamBytes / sizeof(EntryBucket)); //make size a power of 2
 					m_entries = std::make_unique<EntryBucket[]>(maxEntries); //could fail
 					m_entryCount = maxEntries;
 					break;
@@ -131,72 +129,87 @@ namespace chess {
 		}
 
 		void flushData() const {
-			std::ofstream file{ getAssetDirectoryPath() / "transposition_table_data.txt" };
-			zAssert(file.is_open());
-			auto hitCount = m_cacheHitCount.load();
-			auto missCount = m_cacheMissCount.load();
-			auto readCount = m_readCount.load();
-			file << "Cache hit count: " << hitCount << '\n';
-			file << "Cache miss count: " << missCount << '\n';
-			file << "Cache miss percentage: " << static_cast<double>(missCount) / static_cast<double>(missCount + hitCount) << '\n';
-			file << "Read count: " << readCount << '\n';
-			file << "Read percentage: " << static_cast<double>(readCount) / static_cast<double>(missCount + hitCount + readCount) << '\n';
+			//std::ofstream file{ getAssetDirectoryPath() / "transposition_table_data.txt" };
+			//zAssert(file.is_open());
+			//auto hitCount = m_cacheHitCount.load();
+			//auto missCount = m_cacheMissCount.load();
+			//auto writeCount = m_writeCount.load();
+			//file << "Cache hit count: " << hitCount << '\n';
+			//file << "Cache miss count: " << missCount << '\n';
+			//file << "Cache miss percentage: " << static_cast<double>(missCount) / static_cast<double>(missCount + hitCount) << '\n';
+			//file << "Write count: " << writeCount << '\n';
+			//file << "Read percentage: " << static_cast<double>(writeCount) / static_cast<double>(missCount + hitCount) << '\n';
 		}
 
-		std::optional<TTEntry> operator[](const Position& pos) {
-			++m_readCount;
-
+		std::optional<TTEntry> operator[](const Position& pos) const {
 			auto hashIndex = pos.hash() & (m_entryCount - 1);
 			auto& bucket = m_entries[hashIndex];
 
-			for (const auto& entry : bucket.array) {
+			std::uint64_t bestEntry = 0;
+			auto bestScore = 0;
+
+			for (const auto& entry : bucket) {
 				auto tempKey = entry.key.load();
 				auto tempData = entry.data.load();
 				if ((tempKey ^ tempData) == pos.hash()) { //insane operator precedence rules
-					++m_cacheHitCount;
-					return PackedTTEntry::unpack(pos, tempData);
+					auto entryScore = PackedTTEntry::calcScore(tempData);
+					if (entryScore > bestScore) {
+						bestScore = entryScore;
+						bestEntry = tempData;
+					}
 				}
 			}
-			
-			++m_cacheMissCount;
+
+			if (bestEntry != 0) {
+				return PackedTTEntry::unpack(pos, bestEntry);
+			}
+
 			return std::nullopt;
 		}
 
 		void insert(const Position& pos, TTEntry entry) {
+			//++m_writeCount;
+
 			entry.age = m_age;
 			auto index = pos.hash() & (m_entryCount - 1);
 			auto& bucket = m_entries[index];
 
-			SafeInt entryIndex{ bucket.insertIndex.load() };
+			std::ptrdiff_t worstIndex = -1;
+			auto worstScore = std::numeric_limits<int>::max();
+			
+			for (auto&& [i, packedEntry] : bucket | std::views::enumerate) {
+				auto tempKey = packedEntry.key.load();
+				auto tempData = packedEntry.data.load();
 
-			for (auto i = 0_su8; i < EntryBucket::ENTRY_COUNT; ++i) {
-				auto& packedEntry = bucket.array[static_cast<size_t>(entryIndex.get())];
-				auto data = packedEntry.data.load();
-				auto existingDepth = PackedTTEntry::getDepth(data);
-
-				if (PackedTTEntry::getAge(data) != m_age) {
-					packedEntry.reassign(entry, pos.hash()); //store new entry if this is a newer search
-					break;
-				}
-				if (existingDepth < entry.depth) { //age is the same, positions may be different
+				if ((tempKey ^ tempData) == pos.hash()) {
+					if (PackedTTEntry::getAge(tempData) == m_age && PackedTTEntry::getDepth(tempData) > entry.depth) {
+						return; 
+					}
 					packedEntry.reassign(entry, pos.hash());
-					break;
+					return;
 				}
 
-				entryIndex.incMod(EntryBucket::ENTRY_COUNT);
+				if (tempKey == 0 && tempData == 0) {
+					worstIndex = i;
+				}
+
+				auto score = PackedTTEntry::calcScore(tempData);
+				if (score < worstScore) {
+					worstScore = score;
+					worstIndex = i;
+				}
 			}
 
-			bucket.insertIndex.store(entryIndex.get());
+			if (worstIndex != -1) {
+				bucket[worstIndex].reassign(entry, pos.hash());
+			}
 		}
 
 		void reset() {
 			m_age = 0_su8;
 
 			std::span span{ m_entries.get(), m_entries.get() + m_entryCount };
-			auto bucketView = span | std::views::transform([](auto& bucket) -> auto& {
-				return bucket.array;
-			});
-			for (auto& entry : std::views::join(bucketView)) {
+			for (auto& entry : std::views::join(span)) {
 				entry.key.store(0);
 				entry.data.store(0);
 			}

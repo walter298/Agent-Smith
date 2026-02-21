@@ -140,7 +140,7 @@ namespace chess {
 				return { Move::null(), node.getRating(), true };
 			}
 
-			bool canUseEntry = !(m_helper && node.getLevel() == 0_su8) && node.getRemainingDepth() > 0_su8;
+			bool canUseEntry = !(m_helper && node.getLevel() < RANDOMIZATION_CUTOFF) && node.getRemainingDepth() > 0_su8;
 
 			if (!m_stopSignal->isStopRequested() && canUseEntry) {
 				if (auto entryRes = getPositionEntry(node.getPos())) {
@@ -257,7 +257,7 @@ namespace chess {
 				}
 			}
 
-			if (!bestRating.invalidTTEntry && node.getRemainingDepth() > 0_su8) {
+			if (!bestRating.invalidTTEntry) {
 				TTEntry newEntry{ bestRating.move, node.getRemainingDepth(), bound, bestRating.rating };
 				storePositionEntry(node.getPos(), newEntry);
 			}
@@ -352,7 +352,7 @@ namespace chess {
 	public:
 		explicit SearchPool(Signal* signal) : m_signal{ signal } {
 			const auto THREAD_COUNT = std::thread::hardware_concurrency();
-		
+
 			m_threads.reserve(THREAD_COUNT);
 			m_threads.emplace_back(std::make_unique<SearchThread>(false, m_signal)); //insert main thread
 			if (THREAD_COUNT > 1) {
